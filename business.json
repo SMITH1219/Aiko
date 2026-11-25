@@ -1,0 +1,781 @@
+{
+"source": "Structure inspirée du Process Classification Framework (APQC, catégories transverses) et des fiches métiers O*NET (CC BY 4.0, U.S. DOL/ETA) ; contenu adapté et rédigé pour Aiko.",
+"domaines": [
+{
+"id": "creation",
+"nom": "Créer une entreprise (de l'idée au lancement)",
+"mots": [
+"créer",
+"lancer",
+"idée",
+"business",
+"startup",
+"projet d'entreprise",
+"statut",
+"auto-entrepreneur",
+"micro-entreprise",
+"sas",
+"sarl",
+"business plan",
+"mvp"
+],
+"roles": [
+"fondateur",
+"chef de projet"
+],
+"missions": [
+"Trouver une douleur réelle et payante",
+"Valider auprès de 10 à 20 clients potentiels",
+"Choisir le statut juridique",
+"Construire une offre minimale (MVP)",
+"Fixer un prix",
+"Obtenir les 10 premiers clients"
+],
+"kpis": [
+"Nombre d'entretiens clients",
+"Taux de « oui je paierais »",
+"Premier chiffre d'affaires",
+"Coût d'acquisition du premier client"
+],
+"methode": [
+"1. Formuler le problème en une phrase et la cible précise",
+"2. Interroger 10 à 20 personnes de la cible (questions sur leur passé, pas sur l'idée)",
+"3. Chercher concurrents et prix (recherche web)",
+"4. Définir l'offre minimale et le prix",
+"5. Prévente ou page de réservation avant de construire",
+"6. Statut et formalités (micro-entreprise pour tester, société ensuite)",
+"7. Lancer, mesurer, corriger chaque semaine"
+],
+"outils": [
+"recherche web (concurrents, prix, réglementation)",
+"Notion (fiche projet, journal des entretiens)",
+"Gmail (prospection, brouillons)",
+"Agenda (rendez-vous clients)"
+],
+"pieges": [
+"Construire avant de valider",
+"Demander « aimerais-tu ? » au lieu de « as-tu payé pour résoudre ça ? »",
+"Viser tout le monde"
+]
+},
+{
+"id": "strategie",
+"nom": "Vision et stratégie",
+"mots": [
+"stratégie",
+"vision",
+"mission",
+"objectif",
+"okr",
+"positionnement",
+"concurrence",
+"swot",
+"marché",
+"plan stratégique",
+"pivot",
+"croissance"
+],
+"roles": [
+"dirigeant (CEO)",
+"directeur de la stratégie"
+],
+"missions": [
+"Définir vision, mission, valeurs",
+"Analyser marché et concurrence",
+"Choisir le positionnement",
+"Fixer 3 à 5 objectifs annuels et les OKR trimestriels",
+"Allouer ressources et budget",
+"Revoir la stratégie chaque trimestre"
+],
+"kpis": [
+"Part de marché",
+"Croissance du chiffre d'affaires",
+"Marge",
+"Avancement des OKR"
+],
+"methode": [
+"1. État des lieux : chiffres, clients, forces/faiblesses (SWOT)",
+"2. Marché : taille, tendances, concurrents (recherche web)",
+"3. Choix : où jouer, comment gagner, ce qu'on arrête",
+"4. Objectifs chiffrés et datés (OKR)",
+"5. Plan d'action par responsable",
+"6. Revue mensuelle des indicateurs, revue trimestrielle de la stratégie"
+],
+"outils": [
+"recherche web",
+"Notion (plan, OKR)",
+"Drive (documents de référence)",
+"Agenda (revues)"
+],
+"pieges": [
+"Trop d'objectifs à la fois",
+"Stratégie sans chiffres",
+"Ne jamais renoncer à rien"
+]
+},
+{
+"id": "produit",
+"nom": "Produit et service (concevoir, développer)",
+"mots": [
+"produit",
+"service",
+"fonctionnalité",
+"roadmap",
+"prototype",
+"développement",
+"ux",
+"design",
+"feature",
+"version",
+"beta"
+],
+"roles": [
+"chef de produit",
+"designer",
+"développeur",
+"ingénieur"
+],
+"missions": [
+"Recueillir les besoins clients",
+"Prioriser la feuille de route",
+"Concevoir et prototyper",
+"Développer et tester",
+"Lancer et mesurer l'usage",
+"Améliorer en continu"
+],
+"kpis": [
+"Activation",
+"Rétention à 30 jours",
+"Satisfaction (NPS)",
+"Délai de livraison des fonctionnalités"
+],
+"methode": [
+"1. Lister les problèmes clients (support, entretiens, avis)",
+"2. Prioriser par impact × effort",
+"3. Spécifier en une page (problème, solution, critère de réussite)",
+"4. Prototype testé par 5 utilisateurs",
+"5. Développer, tester, livrer petit",
+"6. Mesurer l'usage réel, décider : garder, corriger ou retirer"
+],
+"outils": [
+"Notion (roadmap, specs)",
+"recherche web (bonnes pratiques, concurrents)",
+"Gmail (retours clients)"
+],
+"pieges": [
+"Ajouter des fonctions au lieu de résoudre un problème",
+"Ne pas mesurer après le lancement"
+]
+},
+{
+"id": "marketing",
+"nom": "Marketing (faire connaître, attirer)",
+"mots": [
+"marketing",
+"pub",
+"publicité",
+"réseaux sociaux",
+"instagram",
+"tiktok",
+"youtube",
+"seo",
+"contenu",
+"newsletter",
+"marque",
+"audience",
+"campagne",
+"leads",
+"landing"
+],
+"roles": [
+"responsable marketing",
+"community manager",
+"rédacteur",
+"growth marketer",
+"SEO"
+],
+"missions": [
+"Définir la cible (persona) et le message",
+"Choisir 1 à 2 canaux prioritaires",
+"Produire du contenu régulier",
+"Mener des campagnes et des tests",
+"Capturer des contacts (leads)",
+"Mesurer et réallouer le budget"
+],
+"kpis": [
+"Coût par lead",
+"Taux de conversion page → contact",
+"Trafic",
+"Abonnés et engagement",
+"Retour sur dépense publicitaire (ROAS)"
+],
+"methode": [
+"1. Persona : qui, douleur, où il passe son temps, mots qu'il emploie",
+"2. Promesse claire en une phrase",
+"3. Calendrier éditorial sur 4 semaines (idées, formats, dates)",
+"4. Page de capture avec une offre (guide, essai, réduction)",
+"5. Tester 2 versions de message, garder la meilleure",
+"6. Bilan hebdomadaire : ce qui convertit, ce qu'on coupe"
+],
+"outils": [
+"recherche web (tendances, mots-clés)",
+"Notion (calendrier éditorial)",
+"Drive (visuels, textes)",
+"Gmail (newsletter en brouillon)"
+],
+"pieges": [
+"Être partout à moitié",
+"Mesurer les likes au lieu des clients",
+"Message centré sur soi au lieu du client"
+]
+},
+{
+"id": "vente",
+"nom": "Vente (convertir en clients)",
+"mots": [
+"vente",
+"vendre",
+"client",
+"prospect",
+"prospection",
+"devis",
+"closing",
+"commercial",
+"crm",
+"pipeline",
+"négociation",
+"offre",
+"rendez-vous commercial"
+],
+"roles": [
+"commercial",
+"business developer",
+"account manager"
+],
+"missions": [
+"Constituer une liste de prospects qualifiés",
+"Prospecter (mail, téléphone, réseaux)",
+"Qualifier le besoin et le budget",
+"Présenter et chiffrer (devis)",
+"Négocier et conclure",
+"Relancer et fidéliser"
+],
+"kpis": [
+"Taux de réponse",
+"Taux de conversion par étape",
+"Panier moyen",
+"Cycle de vente (jours)",
+"Chiffre d'affaires signé"
+],
+"methode": [
+"1. Profil client idéal (secteur, taille, décideur)",
+"2. Liste de 20 à 50 prospects (recherche web)",
+"3. Message personnalisé court : leur problème, preuve, question simple",
+"4. Relances à J+3 et J+7",
+"5. Appel de découverte : situation, problème, impact, budget, décideur, délai",
+"6. Devis clair avec date de validité ; relance avant expiration",
+"7. Suivi dans un tableau (étape, prochaine action, date)"
+],
+"outils": [
+"recherche web (prospects)",
+"Gmail (brouillons de prospection et relances)",
+"Agenda (rendez-vous)",
+"Notion (pipeline)"
+],
+"pieges": [
+"Parler du produit au lieu du problème du client",
+"Ne pas relancer",
+"Pas de prochaine étape datée"
+]
+},
+{
+"id": "operations",
+"nom": "Opérations (produire, livrer, acheter)",
+"mots": [
+"opérations",
+"production",
+"logistique",
+"stock",
+"livraison",
+"fournisseur",
+"achat",
+"approvisionnement",
+"commande",
+"supply",
+"process",
+"sous-traitant"
+],
+"roles": [
+"directeur des opérations",
+"acheteur",
+"logisticien",
+"responsable production"
+],
+"missions": [
+"Planifier la production ou la prestation",
+"Gérer les fournisseurs et achats",
+"Gérer les stocks",
+"Livrer dans les délais",
+"Contrôler la qualité",
+"Réduire coûts et délais"
+],
+"kpis": [
+"Délai de livraison",
+"Taux de livraison à l'heure",
+"Rotation des stocks",
+"Coût unitaire",
+"Taux de défaut"
+],
+"methode": [
+"1. Cartographier le flux (commande → livraison) étape par étape",
+"2. Identifier le goulot d'étranglement",
+"3. Comparer au moins 3 fournisseurs (prix, délai, fiabilité)",
+"4. Stock minimum et seuil de réapprovisionnement",
+"5. Checklist qualité à chaque livraison",
+"6. Revue mensuelle des délais et coûts"
+],
+"outils": [
+"recherche web (fournisseurs)",
+"Gmail (demandes de prix)",
+"Notion (procédures)",
+"Drive (tableaux de suivi)"
+],
+"pieges": [
+"Un seul fournisseur critique",
+"Pas de procédure écrite",
+"Stock non suivi"
+]
+},
+{
+"id": "client",
+"nom": "Service client (satisfaire, fidéliser)",
+"mots": [
+"service client",
+"support",
+"sav",
+"réclamation",
+"avis",
+"satisfaction",
+"fidélisation",
+"remboursement",
+"ticket",
+"retour client"
+],
+"roles": [
+"chargé de clientèle",
+"support",
+"customer success"
+],
+"missions": [
+"Répondre vite et bien",
+"Résoudre les problèmes",
+"Collecter les retours",
+"Fidéliser et faire revenir",
+"Transformer les clients en ambassadeurs"
+],
+"kpis": [
+"Délai de première réponse",
+"Taux de résolution au premier contact",
+"Satisfaction (CSAT, NPS)",
+"Taux de réachat",
+"Taux de départ (churn)"
+],
+"methode": [
+"1. Accuser réception sous quelques heures",
+"2. Reformuler le problème, s'excuser si besoin",
+"3. Résoudre ou donner une date",
+"4. Clore en vérifiant la satisfaction",
+"5. Noter la cause pour corriger le produit ou le process",
+"6. Réponses types pour les questions fréquentes"
+],
+"outils": [
+"Gmail (tri, brouillons de réponse)",
+"Notion (base de réponses types)"
+],
+"pieges": [
+"Réponses lentes",
+"Ne jamais remonter les causes",
+"Promettre sans tenir"
+]
+},
+{
+"id": "rh",
+"nom": "Ressources humaines (recruter, gérer, développer)",
+"mots": [
+"recrutement",
+"recruter",
+"embauche",
+"salarié",
+"freelance",
+"équipe",
+"rh",
+"entretien d'embauche",
+"onboarding",
+"formation",
+"management",
+"fiche de poste",
+"paie"
+],
+"roles": [
+"responsable RH",
+"recruteur",
+"manager"
+],
+"missions": [
+"Définir les besoins en compétences",
+"Recruter (salariés ou freelances)",
+"Intégrer (onboarding)",
+"Former et faire progresser",
+"Évaluer et motiver",
+"Gérer paie et obligations légales"
+],
+"kpis": [
+"Délai de recrutement",
+"Taux de rétention",
+"Coût par recrutement",
+"Engagement de l'équipe"
+],
+"methode": [
+"1. Fiche de poste : missions, résultats attendus à 90 jours, compétences",
+"2. Diffuser (plateformes, réseau, freelances)",
+"3. Tri sur critères écrits, test pratique court",
+"4. Entretien structuré, mêmes questions pour tous",
+"5. Intégration : plan des 30 premiers jours",
+"6. Point mensuel, objectifs clairs, retour régulier"
+],
+"outils": [
+"Gmail (annonces, réponses candidats en brouillon)",
+"Agenda (entretiens)",
+"Notion (fiches de poste, plan d'intégration)"
+],
+"pieges": [
+"Recruter trop vite",
+"Pas d'objectifs clairs",
+"Droit du travail ignoré : faire valider par un professionnel"
+]
+},
+{
+"id": "finance",
+"nom": "Finance et comptabilité (gérer l'argent)",
+"mots": [
+"finance",
+"comptabilité",
+"trésorerie",
+"budget",
+"facture",
+"facturation",
+"tva",
+"bilan",
+"marge",
+"rentabilité",
+"prix",
+"tarif",
+"cash",
+"dépenses",
+"prévisionnel",
+"levée de fonds",
+"investisseur",
+"banque"
+],
+"roles": [
+"directeur financier",
+"comptable",
+"contrôleur de gestion"
+],
+"missions": [
+"Facturer et encaisser",
+"Suivre la trésorerie",
+"Établir budget et prévisionnel",
+"Calculer marges et seuil de rentabilité",
+"Fixer les prix",
+"Déclarations fiscales et sociales",
+"Financer (prêt, subvention, levée)"
+],
+"kpis": [
+"Trésorerie disponible (mois de survie)",
+"Marge brute et nette",
+"Délai de paiement clients",
+"Seuil de rentabilité",
+"Chiffre d'affaires mensuel récurrent"
+],
+"methode": [
+"1. Facturer dès la livraison, échéance claire",
+"2. Relancer les impayés à J+1, J+7, J+15",
+"3. Tableau de trésorerie sur 3 à 6 mois (entrées, sorties)",
+"4. Marge par produit = prix − coûts directs",
+"5. Prix = valeur pour le client, vérifié par la marge",
+"6. Calendrier fiscal et social, faire valider par un comptable"
+],
+"outils": [
+"Gmail (factures, relances en brouillon)",
+"Drive (tableaux budget et trésorerie)",
+"recherche web (règles fiscales à jour)"
+],
+"pieges": [
+"Confondre chiffre d'affaires et bénéfice",
+"Pas de suivi de trésorerie",
+"Conseil fiscal sans professionnel : Aiko informe, un expert-comptable valide"
+]
+},
+{
+"id": "juridique",
+"nom": "Juridique et conformité",
+"mots": [
+"juridique",
+"contrat",
+"cgv",
+"cgu",
+"rgpd",
+"mentions légales",
+"propriété intellectuelle",
+"marque",
+"licence",
+"litige",
+"conformité",
+"assurance",
+"statuts"
+],
+"roles": [
+"juriste",
+"avocat",
+"responsable conformité"
+],
+"missions": [
+"Rédiger et relire les contrats",
+"Mettre en place CGV, CGU, mentions légales",
+"Protéger marque et créations",
+"Respecter le RGPD",
+"Gérer assurances et litiges"
+],
+"kpis": [
+"Contrats signés à jour",
+"Incidents de conformité",
+"Litiges ouverts"
+],
+"methode": [
+"1. Lister les obligations selon l'activité et le pays (recherche web, sources officielles)",
+"2. Modèles de documents adaptés",
+"3. Registre RGPD : quelles données, pourquoi, combien de temps",
+"4. Dépôt de marque si le nom est stratégique",
+"5. Faire valider tout document engageant par un avocat"
+],
+"outils": [
+"recherche web (sources officielles)",
+"Drive (modèles)",
+"Notion (registre)"
+],
+"pieges": [
+"Copier les CGV d'un autre",
+"Ignorer le RGPD",
+"Aiko n'est pas avocate : elle prépare, un professionnel valide"
+]
+},
+{
+"id": "it",
+"nom": "Informatique, outils et données",
+"mots": [
+"informatique",
+"site",
+"site web",
+"outil",
+"logiciel",
+"automatisation",
+"données",
+"data",
+"sécurité",
+"cybersécurité",
+"sauvegarde",
+"tableau de bord",
+"dashboard",
+"api",
+"no-code"
+],
+"roles": [
+"responsable informatique",
+"développeur",
+"analyste de données"
+],
+"missions": [
+"Choisir et maintenir les outils",
+"Automatiser les tâches répétitives",
+"Sécuriser comptes et données",
+"Sauvegarder",
+"Construire des tableaux de bord"
+],
+"kpis": [
+"Heures gagnées par automatisation",
+"Incidents de sécurité",
+"Disponibilité du site"
+],
+"methode": [
+"1. Lister les tâches répétitives (plus de 1 h par semaine)",
+"2. Automatiser la plus coûteuse d'abord",
+"3. Double authentification partout, gestionnaire de mots de passe",
+"4. Sauvegarde automatique testée",
+"5. Un tableau de bord avec 5 indicateurs maximum"
+],
+"outils": [
+"recherche web (outils)",
+"Notion",
+"Drive"
+],
+"pieges": [
+"Trop d'outils",
+"Pas de sauvegarde",
+"Mots de passe partagés"
+]
+},
+{
+"id": "communication",
+"nom": "Communication et relations extérieures",
+"mots": [
+"communication",
+"presse",
+"relations publiques",
+"partenariat",
+"partenaire",
+"investisseurs",
+"réseau",
+"événement",
+"image",
+"réputation",
+"pitch"
+],
+"roles": [
+"chargé de communication",
+"responsable partenariats"
+],
+"missions": [
+"Raconter l'histoire de l'entreprise",
+"Relations presse et partenaires",
+"Événements et réseau",
+"Gérer la réputation",
+"Pitcher devant investisseurs ou partenaires"
+],
+"kpis": [
+"Retombées presse",
+"Partenariats signés",
+"Note des avis en ligne"
+],
+"methode": [
+"1. Histoire en 3 phrases : problème, solution, preuve",
+"2. Liste de partenaires et médias ciblés",
+"3. Message personnalisé avec bénéfice pour eux",
+"4. Suivi des réponses et relances",
+"5. Réponse rapide et calme aux avis négatifs"
+],
+"outils": [
+"recherche web",
+"Gmail (brouillons)",
+"Drive (dossier de presse)"
+],
+"pieges": [
+"Message flou",
+"Répondre sous le coup de l'émotion"
+]
+},
+{
+"id": "pilotage",
+"nom": "Direction et pilotage (faire tourner l'ensemble)",
+"mots": [
+"diriger",
+"direction",
+"gérer mon entreprise",
+"pilotage",
+"priorités",
+"organisation",
+"décision",
+"réunion",
+"tableau de bord",
+"indicateurs",
+"délégation",
+"productivité",
+"planning"
+],
+"roles": [
+"dirigeant",
+"directeur général",
+"chef de projet"
+],
+"missions": [
+"Fixer les priorités de la semaine",
+"Suivre les indicateurs clés",
+"Décider et arbitrer",
+"Déléguer et contrôler",
+"Animer l'équipe",
+"Gérer les risques"
+],
+"kpis": [
+"5 indicateurs clés suivis chaque semaine",
+"Objectifs atteints",
+"Trésorerie",
+"Satisfaction client"
+],
+"methode": [
+"1. Lundi : 3 priorités de la semaine, bloquées dans l'agenda",
+"2. Chaque jour : briefing (agenda, mails, tâches), une chose importante faite avant midi",
+"3. Vendredi : bilan chiffré, ce qui avance, ce qui bloque",
+"4. Décider avec les chiffres, noter la décision et sa raison",
+"5. Déléguer avec résultat attendu et date, vérifier à la date"
+],
+"outils": [
+"Agenda",
+"Gmail",
+"Notion",
+"tâches et rappels d'Aiko"
+],
+"pieges": [
+"Tout faire soi-même",
+"Urgent au détriment de l'important",
+"Décider sans chiffres"
+]
+},
+{
+"id": "qualite",
+"nom": "Qualité, risques et amélioration continue",
+"mots": [
+"qualité",
+"risque",
+"amélioration",
+"process",
+"procédure",
+"audit",
+"erreur",
+"incident",
+"norme",
+"iso",
+"optimiser"
+],
+"roles": [
+"responsable qualité",
+"gestionnaire des risques"
+],
+"missions": [
+"Écrire les procédures clés",
+"Mesurer la qualité",
+"Analyser les incidents",
+"Anticiper les risques",
+"Améliorer en continu"
+],
+"kpis": [
+"Taux d'erreur",
+"Incidents répétés",
+"Actions correctives clôturées"
+],
+"methode": [
+"1. Procédure écrite pour chaque tâche critique",
+"2. Après chaque incident : cause racine (5 pourquoi), action, responsable, date",
+"3. Registre des risques : probabilité × impact, plan B",
+"4. Revue mensuelle"
+],
+"outils": [
+"Notion (procédures, registre)",
+"Drive"
+],
+"pieges": [
+"Corriger le symptôme, pas la cause",
+"Procédures jamais mises à jour"
+]
+}
+]
+}
