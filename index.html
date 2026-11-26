@@ -1338,7 +1338,7 @@ const WR_LABEL = { soutien_balconnet_noir: 'Balconnet noir', maillot_body_dentel
   bas_minijupe: 'Mini-jupe', bas_jupe: 'Jupe', bas_jupelongue: 'Jupe longue', bas_short: 'Short', bas_jean: 'Jean', bas_legging: 'Legging',
   jambes_bas: 'Bas', jambes_resille: 'Bas résille', bas_collant_resille: 'Collant résille', jambes_chaussettes: 'Chaussettes', pieds_ballerines: 'Ballerines', pieds_bottines: 'Bottines' };
 const wr = { items: {}, on: null };          // items : nom -> [maillages]
-function wrDefault() { return { soutien: '', dessous: '', maillot: '', robe: '', haut: '', bas: '', jambes: '', pieds: '' }; }   // par défaut : aucune tenue
+function wrDefault() { return { soutien: '', dessous: 'dessous_culotte', maillot: '', robe: '', haut: '', bas: '', jambes: '', pieds: '' }; }   // par défaut : une culotte (retirable dans 👗 › Dessous)
 function wrApply(save) {
   const on = wr.on, has = (n) => !!wr.items[n];
   if (on.maillot) { on.robe = ''; on.haut = ''; on.bas = ''; }
@@ -1477,6 +1477,7 @@ function wrSetup(root) {
   if (store.get('aiko.wardrobe.v2', '') !== '1') { store.set('aiko.wardrobe', 'null'); store.set('aiko.wardrobe.v2', '1'); }   // ancienne tenue mémorisée remise à zéro une fois
   try { saved = JSON.parse(store.get('aiko.wardrobe', 'null')); } catch (_) {}
   wr.on = Object.assign(wrDefault(), saved || {});
+  try { if (!localStorage.getItem('aiko.culotte1')) { localStorage.setItem('aiko.culotte1', '1'); if (!wr.on.dessous && !wr.on.maillot) wr.on.dessous = 'dessous_culotte'; } } catch (_) {}   // une seule fois : culotte mise par défaut, ensuite son choix est respecté
   for (const k in wr.on) if (wr.on[k] && !wr.items[wr.on[k]]) wr.on[k] = '';
   try { wr.colors = JSON.parse(store.get('aiko.wardrobe.colors', '{}')) || {}; } catch (_) { wr.colors = {}; }
   wrColorsApply(); wrApply(false); wrSwatchSync();
