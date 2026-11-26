@@ -133,6 +133,81 @@ function areolaSetup() {
     window.__AREO = AREO; window.__areo = { R, n: A.reduce((x, y) => x + y, 0) };
   } catch (e) { console.warn('aréoles', e); }
 }
+// Outil commun de sculpture : après avoir déplacé des points, recalcule l'éclairage (normales) de la zone SANS casser les coutures.
+// Les points dédoublés aux coutures de texture sont regroupés par position ; w[i] (0..1) = force du recalcul par point.
+function resculptNormals(m, w) {
+  const g = m.geometry, P = g.attributes.position, NA = g.attributes.normal, I = g.index, key = new Int32Array(P.count), map = new Map();
+  for (let i = 0; i < P.count; i++) { const k = Math.round(P.getX(i) * 2e4) + ',' + Math.round(P.getY(i) * 2e4) + ',' + Math.round(P.getZ(i) * 2e4); let id = map.get(k); if (id === undefined) { id = map.size; map.set(k, id); } key[i] = id; }
+  const acc = new Float32Array(map.size * 3), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+  const tri = I ? I.count / 3 : P.count / 3, ix = (t) => (I ? I.getX(t) : t);
+  for (let t = 0; t < tri; t++) {
+    const i0 = ix(3 * t), i1 = ix(3 * t + 1), i2 = ix(3 * t + 2); if (!(w[i0] > 0 || w[i1] > 0 || w[i2] > 0)) continue;
+    a.fromBufferAttribute(P, i0); b.fromBufferAttribute(P, i1); c.fromBufferAttribute(P, i2); n.copy(b).sub(a).cross(c.sub(a));   // pondéré par l'aire
+    for (const i of [i0, i1, i2]) { const k = key[i] * 3; acc[k] += n.x; acc[k + 1] += n.y; acc[k + 2] += n.z; }
+  }
+  for (let i = 0; i < P.count; i++) { if (!(w[i] > 0)) continue; const k = key[i] * 3; n.set(acc[k], acc[k + 1], acc[k + 2]); if (n.lengthSq() < 1e-20) continue;
+    a.fromBufferAttribute(NA, i).lerp(n.normalize(), Math.min(1, w[i])).normalize(); NA.setXYZ(i, a.x, a.y, a.z); }
+  NA.needsUpdate = true;
+}
+// Lissage de sculpture (comme « Smooth » dans Blender) : chaque point de la zone glisse vers la moyenne de ses voisins,
+// ce qui efface marches, plis durs et bosses. w[i] (0..1) = force par point ; les points dédoublés aux coutures restent soudés.
+function resculptSmooth(m, w, iters, k) {
+  const g = m.geometry, P = g.attributes.position, I = g.index, key = new Int32Array(P.count), map = new Map();
+  for (let i = 0; i < P.count; i++) { const q = Math.round(P.getX(i) * 2e4) + ',' + Math.round(P.getY(i) * 2e4) + ',' + Math.round(P.getZ(i) * 2e4); let id = map.get(q); if (id === undefined) { id = map.size; map.set(q, id); } key[i] = id; }
+  const n = map.size, X = new Float32Array(n * 3), W = new Float32Array(n), nb = new Map();
+  for (let i = 0; i < P.count; i++) { const q = key[i] * 3; X[q] = P.getX(i); X[q + 1] = P.getY(i); X[q + 2] = P.getZ(i); if (w[i] > W[key[i]]) W[key[i]] = w[i]; }
+  const tri = I ? I.count / 3 : P.count / 3, ix = (t) => key[I ? I.getX(t) : t];
+  const link = (a, b) => { if (a === b || !(W[a] > 0)) return; let s = nb.get(a); if (!s) nb.set(a, s = new Set()); s.add(b); };
+  for (let t = 0; t < tri; t++) { const a = ix(3 * t), b = ix(3 * t + 1), c = ix(3 * t + 2); link(a, b); link(a, c); link(b, a); link(b, c); link(c, a); link(c, b); }
+  const Y = new Float32Array(X.length);
+  for (let it = 0; it < iters; it++) {
+    Y.set(X);
+    for (const [a, s] of nb) { let x = 0, y = 0, z = 0; for (const b of s) { x += X[3 * b]; y += X[3 * b + 1]; z += X[3 * b + 2]; } const c = s.size, f = W[a] * k;
+      Y[3 * a] += (x / c - X[3 * a]) * f; Y[3 * a + 1] += (y / c - X[3 * a + 1]) * f; Y[3 * a + 2] += (z / c - X[3 * a + 2]) * f; }
+    X.set(Y);
+  }
+  for (let i = 0; i < P.count; i++) if (w[i] > 0) { const q = key[i] * 3; P.setXYZ(i, X[q], X[q + 1], X[q + 2]); }
+  P.needsUpdate = true;
+}
+// Pubis : la bosse trop saillante (avec un creux brutal dessous) devient une courbe douce et continue depuis le bas-ventre.
+// On recule seulement la peau, en fondu sur les côtés ; rien d'autre ne change.
+function monsSetup() {
+  try {
+    let m = null; vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.name === 'Body_corps') m = o; });
+    if (!m || m.userData.monsDone || !bones.hips || !bones.lToes) return; m.userData.monsDone = 1;
+    const H = bones.hips.getWorldPosition(new THREE.Vector3()), f = bones.lToes.getWorldPosition(new THREE.Vector3()).sub(bones.lFoot.getWorldPosition(new THREE.Vector3()));
+    f.y = 0; f.normalize(); const side = new THREE.Vector3(0, 1, 0).cross(f).normalize();
+    const T = [[-0.03, 0], [-0.05, 0.003], [-0.065, 0.008], [-0.075, 0.012], [-0.085, 0.015], [-0.095, 0.013], [-0.105, 0.012], [-0.115, 0.009], [-0.121, 0.004], [-0.128, 0]];
+    const G = window.__mons ?? 1.5;
+    const dl = (y) => { for (let k = 0; k < T.length - 1; k++) { const [y0, d0] = T[k], [y1, d1] = T[k + 1]; if (y <= y0 && y >= y1) return d0 + (d1 - d0) * (y0 - y) / (y0 - y1); } return 0; };
+    const T2 = [[-0.118, 0], [-0.126, 0.02], [-0.133, 0.03], [-0.142, 0.022], [-0.152, 0.01], [-0.162, 0]];
+    const dl2 = (y) => { for (let k = 0; k < T2.length - 1; k++) { const [y0, d0] = T2[k], [y1, d1] = T2[k + 1]; if (y <= y0 && y >= y1) return d0 + (d1 - d0) * (y0 - y) / (y0 - y1); } return 0; };
+    const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    m.updateWorldMatrix(true, false);
+    const P = m.geometry.attributes.position, V = new THREE.Vector3(), sc = new THREE.Vector3();
+    m.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), sc); const k = 1 / (Math.abs(sc.x) || 1);
+    const N = f.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(m.matrixWorld).invert()).normalize();
+    const NA = m.geometry.attributes.normal, nv = new THREE.Vector3();
+    const WR = new Float32Array(P.count), REAL = window.__monsReal ?? 0;
+    const tn = new THREE.Vector3(), DN = new THREE.Vector3(0, -1, 0).applyMatrix3(new THREE.Matrix3().getNormalMatrix(m.matrixWorld).invert()).normalize();
+    for (let i = 0; i < P.count; i++) {
+      m.getVertexPosition(i, V); V.applyMatrix4(m.matrixWorld); V.sub(H);
+      const lat = Math.abs(V.dot(side)); if (V.dot(f) < 0.03 || lat > 0.11) continue;
+      // éclairage : sous la bosse, les normales pointaient vers le bas (croissant d'ombre dur) ; on les redresse vers l'avant, en fondu
+      const wn = (1 - sm(0.05, 0.11, lat)) * sm(-0.17, -0.13, V.y) * (1 - sm(-0.06, -0.02, V.y)) * (window.__monsN ?? 0.75);
+      WR[i] = (1 - sm(0.06, 0.12, lat)) * sm(-0.19, -0.15, V.y) * (1 - sm(-0.05, -0.01, V.y));
+      if (wn > 0 && REAL < 1 && !(window.__monsS > 0)) { tn.copy(N).addScaledVector(DN, 0.9 * (1 - sm(-0.135, -0.105, V.y))).normalize();   // en bas : ombre douce gardée (pas de tache claire)
+        nv.set(NA.getX(i), NA.getY(i), NA.getZ(i)).lerp(tn, wn).normalize(); NA.setXYZ(i, nv.x, nv.y, nv.z); }
+      // dessous : le creux brutal sous le mont est comblé (la peau avance), en pointe douce entre les cuisses
+      const up = dl2(V.y) * (1 - sm(0.012, 0.045, lat)) * (window.__monsF ?? 0);
+      const d = dl(V.y) * (1 - sm(0.045, 0.1, lat)) * G - up; if (d === 0) continue;
+      P.setXYZ(i, P.getX(i) - N.x * d * k, P.getY(i) - N.y * d * k, P.getZ(i) - N.z * d * k);
+    }
+    P.needsUpdate = true; NA.needsUpdate = true;
+    const IT = window.__monsS ?? 0; if (IT > 0) { resculptSmooth(m, WR, IT, 0.5); resculptNormals(m, WR); }
+    else if (REAL > 0) { for (let i = 0; i < WR.length; i++) WR[i] *= REAL; resculptNormals(m, WR); }
+  } catch (e) { console.warn('pubis', e); }
+}
 function cleftSetup() {
   try {
     let m = null; vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.name === 'Body_corps') m = o; });
@@ -362,7 +437,7 @@ function onLoaded(gltf, label, isDemo) {
   if (wrSetup(vrm.scene)) $('#row-tint').hidden = true;
   try { correctivesSetup(); } catch (_) {}
   try { romSetup(vrm.scene); } catch (_) {}
-  areolaSetup(); cleftSetup(); scalpSetup();
+  monsSetup(); areolaSetup(); cleftSetup(); scalpSetup();
   glassesOn = false;
   demoLock = !!isDemo;
   document.querySelectorAll('#row-outfit .chip').forEach((b) => b.classList.toggle('off', demoLock && b.dataset.outfit !== 'habillee'));
