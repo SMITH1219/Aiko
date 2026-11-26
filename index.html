@@ -2262,21 +2262,11 @@ async function studyOnce(topic, quiet) {
   finally { const b2 = brainState(); b2.cur = b2.cur || { log: [], auto: false }; b2.cur.log = (b2.cur.log || []).concat(entry).slice(-30); brainSave(b2); _studying = false; }
   return entry;
 }
-// ---- Le réveil d'Aiko : au premier lancement du jour, elle étudie un sujet qui compte pour toi et te raconte ce qu'elle a appris ----
-setTimeout(async () => {
-  try {
-    if (!DIRECT) return; const day = new Date().toDateString();
-    if (localStorage.getItem('aiko.wake') === day) return; localStorage.setItem('aiko.wake', day);
-    const e = await studyOnce(null, true); if (!e || !e.ok) return;
-    const k = life.savoirs[life.savoirs.length - 1]; const b = brainState();
-    const n = (b.cur.log || []).filter((x) => x.ok).length, h = new Date().getHours();
-    const hi = h < 12 ? 'Bonjour' : h < 18 ? 'Re-bonjour' : 'Bonsoir';
-    const msg = hi + ' ! Pendant que tu n\'étais pas là, j\'ai étudié « ' + e.t + ' ». Ce que j\'en retiens : ' + k.f
-      + (n > 1 ? ' C\'est mon ' + n + 'e apprentissage en autonomie.' : ' C\'est mon premier apprentissage toute seule.') + ' Tu veux qu\'on creuse ?';
-    addLog('ai', msg); try { speak(msg); } catch (_) {}
-  } catch (_) {}
-}, 5000);
-setInterval(() => { try { const b = brainState(); if (b.cur && b.cur.auto && DIRECT && !document.hidden && Date.now() - ((b.cur.log || []).slice(-1)[0] || { at: 0 }).at > 20 * 60000) studyOnce(null, true); } catch (_) {} }, 60000);
+// ---- Apprentissage autonome : elle étudie pour ELLE (pas de cours à la personne), dès qu'un cerveau est disponible ----
+const canThink = () => !!(DIRECT || (typeof cap !== 'undefined' && cap.sample));
+const autoOn = () => { const b = brainState(); return !(b.cur && b.cur.auto === false); };
+setTimeout(() => { try { if (canThink() && autoOn() && localStorage.getItem('aiko.wake') !== new Date().toDateString()) { localStorage.setItem('aiko.wake', new Date().toDateString()); studyOnce(null, true); } } catch (_) {} }, 8000);
+setInterval(() => { try { const b = brainState(); if (canThink() && autoOn() && !document.hidden && Date.now() - (((b.cur && b.cur.log) || []).slice(-1)[0] || { at: 0 }).at > 20 * 60000) studyOnce(null, true); } catch (_) {} }, 60000);
 async function runMission(goal) {
   const b0 = brainState(); const M = { id: Date.now(), goal: goal.slice(0, 200), status: 'en cours', steps: [], at: Date.now(), replans: 0 };
   b0.missions.push(M); b0.missions = b0.missions.slice(-12); brainSave(b0);
@@ -2384,6 +2374,11 @@ TOOLS.list = webTools();
 async function webJSON(u, ms) { const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms || 12000); try { const r = await fetch(u, { signal: ctl.signal }); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); } finally { clearTimeout(t); } }
 async function webSearch(q) {
   q = String(q || '').trim().slice(0, 200); if (!q) return 'Requête vide.';
+  if (!WEB_OK) {
+    const t = TOOLS.mcp && TOOLS.list.find((x) => /^web_search$/i.test(x.name));
+    if (!t) return 'Aucun résultat trouvé pour « ' + q + ' » (pas d\'accès web ici).';
+    try { const sc = String(TOOLS.schemas[t.server + '|' + t.name] || ''); const args = /search_queries|objective/.test(sc) ? { objective: q, search_queries: [q] } : { query: q }; const r = await TOOLS.mcp.callTool(t.server, t.name, args); let o = r && r.payload !== undefined ? r.payload : r && r.content; o = typeof o === 'string' ? o : JSON.stringify(o); return o.slice(0, 6000); } catch (_) { return 'Aucun résultat trouvé pour « ' + q + ' ».'; }
+  }
   const out = [], e = encodeURIComponent(q);
   for (const lang of ['fr', 'en']) {
     try {
@@ -4941,7 +4936,7 @@ animate();
     const cp = Object.entries(B.comp || {}).sort((x, y) => y[1] - x[1]).slice(0, 6);
     sec('Compétences — méthodes les plus utilisées', cp.length ? '<div style="font-size:12px">' + cp.map(([k, v]) => esc(COMPS[k] ? COMPS[k].n : k) + ' ' + v).join(' · ') + '</div>' : '<div style="font-size:12px;color:#777">2 toujours actives (raisonnement, fiabilité) + jusqu\'à 4 choisies selon ton message.</div>');
     const C = B.cur || { log: [], auto: false };
-    sec('Curriculum — ce qu\'elle a étudié seule', '<div style="font-size:12px">' + (C.log.length ? C.log.slice(-5).reverse().map((x) => (x.ok ? '✓ ' : '· ') + esc(x.t) + ' — ' + esc(x.note)).join('<br>') : 'Rien étudié pour l\'instant.') + '<br><button id="b-study" type="button" style="margin:8px 0;padding:7px 12px;border:1px solid #d5560f;border-radius:14px;background:#fff;color:#d5560f;font-size:12px">Étudier maintenant</button> <label style="font-size:12px"><input id="b-auto" type="checkbox"' + (C.auto ? ' checked' : '') + '> étudier seule toutes les 20 min (page ouverte)</label></div>');
+    sec('Curriculum — ce qu\'elle a étudié seule', '<div style="font-size:12px">' + (C.log.length ? C.log.slice(-5).reverse().map((x) => (x.ok ? '✓ ' : '· ') + esc(x.t) + ' — ' + esc(x.note)).join('<br>') : 'Rien étudié pour l\'instant.') + '<br><button id="b-study" type="button" style="margin:8px 0;padding:7px 12px;border:1px solid #d5560f;border-radius:14px;background:#fff;color:#d5560f;font-size:12px">Étudier maintenant</button> <label style="font-size:12px"><input id="b-auto" type="checkbox"' + (C.auto !== false ? ' checked' : '') + '> apprendre seule toutes les 20 min (page ouverte)</label></div>');
     return h.join('');
   }
   b.addEventListener('click', () => {
