@@ -362,23 +362,41 @@ function engineNote(id, ok, ms, err, rateLimited) {
     if (rateLimited) st.until = Date.now() + 20000; else if (st.streak >= 3) st.until = Date.now() + 180000; }
   st.last = Date.now(); b.lastEngine = ok ? id : b.lastEngine; brainSave(b);
 }
-async function directSample(msgs, opts) {
-  const order = engineOrder(brainState()); const errs = [];
-  if (!order.length) throw new Error('tous mes moteurs sont en pause après plusieurs échecs ; réessaie dans quelques minutes ou ajoute ton moteur dans 👗 › Réglages › 🧠');
-  for (const e of order) {
-    const t0 = Date.now();
-    try {
-      let out;
-      if (e.get) { const text = await directFallbackGet(msgs); if (opts && opts.onText) opts.onText({ text }); out = { text }; }
-      else out = await directPost(e, msgs, opts);
-      engineNote(e.id, true, Date.now() - t0);
-      out.engine = e.id; out.text = guardOutput(out.text); return out;
-    } catch (err) {
-      const m = String(err && err.message || err);
-      engineNote(e.id, false, Date.now() - t0, m, /429/.test(m)); errs.push(e.name + ' : ' + m.slice(0, 80));
+// Une seule demande à la fois vers les moteurs (chat, mission, étude ne se marchent plus dessus) ; si tous sont saturés
+// (429), elle patiente jusqu'à la fin de la pause et réessaie une fois, au lieu d'échouer.
+let _brainQ = Promise.resolve();
+function directSample(msgs, opts) { const run = _brainQ.then(() => directSampleRun(msgs, opts)); _brainQ = run.catch(() => {}); return run; }
+async function directSampleRun(msgs, opts) {
+  const errs = [];
+  for (let round = 0; round < 2; round++) {
+    let order = engineOrder(brainState());
+    if (!order.length || round) {
+      const b = brainState(), now = Date.now();
+      const rl = engineList().filter((e) => { const u = (b.eng[e.id] || {}).until || 0; return u > now && u - now <= 25000; });   // pauses courtes = saturation
+      if (!rl.length) { if (!order.length && !round) throw new Error('tous mes moteurs sont en pause après plusieurs échecs ; réessaie dans quelques minutes ou ajoute ton moteur dans 👗 › Réglages › 🧠'); break; }
+      const wait = Math.min(Math.max(...rl.map((e) => b.eng[e.id].until)) - now + 300, window.__rlMax ?? 22000);
+      try { showToast('Moteur saturé : je patiente ' + Math.ceil(wait / 1000) + ' s…'); } catch (_) {}
+      await new Promise((r) => setTimeout(r, wait));
+      const b2 = brainState(); rl.forEach((e) => { if (b2.eng[e.id]) b2.eng[e.id].until = 0; }); brainSave(b2);
+      order = engineOrder(b2);
     }
+    let limited = false;
+    for (const e of order) {
+      const t0 = Date.now();
+      try {
+        let out;
+        if (e.get) { const text = await directFallbackGet(msgs); if (opts && opts.onText) opts.onText({ text }); out = { text }; }
+        else out = await directPost(e, msgs, opts);
+        engineNote(e.id, true, Date.now() - t0);
+        out.engine = e.id; out.text = guardOutput(out.text); return out;
+      } catch (err) {
+        const m = String(err && err.message || err), rlim = /429/.test(m); limited = limited || rlim;
+        engineNote(e.id, false, Date.now() - t0, m, rlim); errs.push(e.name + ' : ' + m.slice(0, 80));
+      }
+    }
+    if (!limited) break;
   }
-  throw new Error('aucun de mes moteurs ne répond (' + errs.join(' · ') + '). Vérifie la connexion, ou ajoute ton moteur dans 👗 › Réglages › 🧠');
+  throw new Error('aucun de mes moteurs ne répond (' + errs.slice(-3).join(' · ') + '). Vérifie la connexion, ou ajoute ton moteur dans 👗 › Réglages › 🧠');
 }
 async function directPost(c, msgs, opts) {
   const chat = msgs.map((m, i) => ({ role: i === 0 ? 'system' : m.role, content: m.content }));
@@ -795,17 +813,19 @@ const SKIN_TONE = 0xf7e2d4;                 // teint chaud doré (multiplie la t
 // Chair qui s'écrase au contact du sol : un point de peau qui passerait sous le sol y est posé, et la chair
 // déborde un peu sur les côtés (fesses et cuisses assises ou allongées, genoux, hanches).
 const HAIR_COL = { value: new THREE.Color(0.20, 0.13, 0.09) };   // cuir chevelu couvert (lu sur la texture des cheveux)
-const SKIN_AVG = { value: new THREE.Color(0.86, 0.66, 0.56) };   // remplacée par la moyenne réelle de sa texture
+const SKIN_AVG = { value: new THREE.Color(0.86, 0.66, 0.56) };
+const AREO = { uNL: { value: new THREE.Vector3(9, 9, 9) }, uNR: { value: new THREE.Vector3(9, 9, 9) }, uAR: { value: 0.03 }, uAS: { value: 1.0 } };   // aréoles : centres (espace de repos), rayon, intensité   // remplacée par la moyenne réelle de sa texture
 const SQ = { uFloor: { value: 0 }, uHip: { value: new THREE.Vector2() }, uSquash: { value: 1 } };
 function squashPatch(sh) {
   Object.assign(sh.uniforms, SQ);
   sh.uniforms.uSkinAvg = SKIN_AVG;
   sh.uniforms.uHair = HAIR_COL;
-  sh.fragmentShader = 'varying float vCleft; varying float vUni; varying float vScalp; uniform vec3 uSkinAvg; uniform vec3 uHair;\n' + sh.fragmentShader
-    .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.rgb = mix(diffuseColor.rgb, uHair * (0.8 + 0.4 * fract(sin(dot(floor(vViewPosition.xy * 900.0), vec2(12.9898, 78.233))) * 43758.5453)), clamp(vScalp, 0.0, 1.0));\n  diffuseColor.rgb = mix(diffuseColor.rgb, uSkinAvg * (0.97 + 0.06 * dot(diffuseColor.rgb, vec3(0.333))), clamp(vUni, 0.0, 1.0) * 0.9);\n  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.68, 0.57, 0.53), clamp(vCleft, 0.0, 1.0));')
+  Object.assign(sh.uniforms, AREO);
+  sh.fragmentShader = 'varying float vCleft; varying float vUni; varying float vScalp; uniform vec3 uSkinAvg; uniform vec3 uHair; varying float vAreo; varying vec3 vRest; uniform vec3 uNL; uniform vec3 uNR; uniform float uAR; uniform float uAS;\n' + sh.fragmentShader
+    .replace('#include <map_fragment>', '#include <map_fragment>\n  if (vAreo > 0.5) { vec3 D1 = vRest - uNL, D2 = vRest - uNR; vec3 D = dot(D1, D1) < dot(D2, D2) ? D1 : D2; float d = length(D); float ang = atan(D.y, D.x); float h1 = fract(sin(floor(ang * 2.2) * 91.7) * 4375.85), h2 = fract(sin(floor(ang * 2.2 + 1.0) * 91.7) * 4375.85); float edge = mix(h1, h2, smoothstep(0.0, 1.0, fract(ang * 2.2))); float R = uAR * (0.86 + 0.1 * edge); float a = (1.0 - smoothstep(R * 0.74, R * 1.02, d)) * uAS; vec3 g = floor(vRest * 900.0); float mot = fract(sin(dot(g, vec3(12.9898, 78.233, 37.719))) * 43758.5453); float rad = fract(sin(floor(ang * 26.0) * 12.989) * 4375.85); vec3 cA = uSkinAvg * vec3(0.72, 0.52, 0.46) * (0.95 + 0.07 * mot) * mix(0.9, 1.04, smoothstep(0.18, 0.85, d / uAR)) * (1.0 - 0.05 * rad * (1.0 - smoothstep(0.2, 0.6, d / uAR))); vec3 gc = floor(vRest * 190.0); float hb = fract(sin(dot(gc, vec3(7.13, 157.1, 113.3))) * 43758.5453); float ring = step(0.42, d / uAR) * (1.0 - step(0.86, d / uAR)); vec3 cc = (fract(vRest * 190.0) - 0.5); float bump = ring * step(0.9, hb) * (1.0 - smoothstep(0.12, 0.3, length(cc))); cA *= 1.0 + 0.14 * bump; float nr = uAR * 0.17; float nz = 1.0 - smoothstep(nr * 0.7, nr * 1.1, d); vec3 cN = uSkinAvg * vec3(0.58, 0.36, 0.33) * (1.0 + 0.12 * (1.0 - smoothstep(0.0, nr * 0.5, d))); diffuseColor.rgb = mix(diffuseColor.rgb, mix(cA, cN, nz), max(a, nz * uAS)); }\n  diffuseColor.rgb = mix(diffuseColor.rgb, uHair * (0.8 + 0.4 * fract(sin(dot(floor(vViewPosition.xy * 900.0), vec2(12.9898, 78.233))) * 43758.5453)), clamp(vScalp, 0.0, 1.0));\n  diffuseColor.rgb = mix(diffuseColor.rgb, uSkinAvg * (0.97 + 0.06 * dot(diffuseColor.rgb, vec3(0.333))), clamp(vUni, 0.0, 1.0) * 0.9);\n  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.68, 0.57, 0.53), clamp(vCleft, 0.0, 1.0));')
     .replace('mapN.xy *= normalScale;', 'mapN.xy *= normalScale * (1.0 - 0.75 * clamp(vUni, 0.0, 1.0));');
-  sh.vertexShader = 'uniform float uFloor; uniform vec2 uHip; uniform float uSquash;\nattribute float aCleft; varying float vCleft; attribute float aUni; varying float vUni; attribute float aScalp; varying float vScalp;\n' + sh.vertexShader.replace('#include <skinning_vertex>', `#include <skinning_vertex>
-  vCleft = aCleft; vUni = aUni; vScalp = aScalp;
+  sh.vertexShader = 'uniform float uFloor; uniform vec2 uHip; uniform float uSquash;\nattribute float aAreo; varying float vAreo; varying vec3 vRest; attribute float aCleft; varying float vCleft; attribute float aUni; varying float vUni; attribute float aScalp; varying float vScalp;\n' + sh.vertexShader.replace('#include <skinning_vertex>', `#include <skinning_vertex>
+  vCleft = aCleft; vUni = aUni; vScalp = aScalp; vAreo = aAreo; vRest = position;
   {
     vec4 wp = modelMatrix * vec4(transformed, 1.0);
     if (uSquash > 0.5 && wp.y < uFloor + 0.012) {
@@ -849,6 +869,48 @@ function scalpSetup() {
         const d = g.getImageData(0, 0, 32, 32).data; let r = 0, gg = 0, b = 0, k = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; k++; }
         if (k > 20) HAIR_COL.value.setRGB(r / k / 255 * 0.8, gg / k / 255 * 0.8, b / k / 255 * 0.8, THREE.SRGBColorSpace); } } catch (_) {}
   } catch (e) { console.warn('cuir chevelu', e); }
+}
+// Aréoles : taille adaptée à sa poitrine (zone de couleur plus large, bord doux et légèrement irrégulier) ; la forme ne change pas.
+function areolaSetup() {
+  try {
+    let m = null; vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.name === 'Body_corps') m = o; });
+    if (!m || m.geometry.attributes.aAreo || !bones.hips || !bones.lToes) return;
+    const H = bones.hips.getWorldPosition(new THREE.Vector3()), f = bones.lToes.getWorldPosition(new THREE.Vector3()).sub(bones.lFoot.getWorldPosition(new THREE.Vector3()));
+    f.y = 0; f.normalize(); const side = new THREE.Vector3(0, 1, 0).cross(f).normalize();
+    m.updateWorldMatrix(true, false);
+    const P = m.geometry.attributes.position, V = new THREE.Vector3(), best = [[-9, -1], [-9, -1]], W = [];
+    for (let i = 0; i < P.count; i++) {
+      m.getVertexPosition(i, V); V.applyMatrix4(m.matrixWorld); const r = V.sub(H); W.push([r.dot(side), r.y, r.dot(f)]);
+      const lat = r.dot(side); if (r.y < 0.2 || r.y > 0.5 || Math.abs(lat) < 0.04) continue;
+      const k = lat > 0 ? 0 : 1, fz = r.dot(f); if (fz > best[k][0]) best[k] = [fz, i];
+    }
+    if (best[0][1] < 0 || best[1][1] < 0) return;
+    const sc = new THREE.Vector3(); m.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), sc); const k = 1 / (Math.abs(sc.x) || 1);
+    const R = 0.07 * k;                                     // rayon ~2,7 cm : proportionné à sa poitrine
+    const L = (i) => new THREE.Vector3(P.getX(i), P.getY(i), P.getZ(i));
+    AREO.uNL.value.copy(L(best[0][1])); AREO.uNR.value.copy(L(best[1][1])); AREO.uAR.value = R;
+
+    // Tétons plus gros : élargis et plus saillants, en douceur autour de leur centre ; le sein ne bouge pas.
+    { const inv = new THREE.Matrix3().getNormalMatrix(m.matrixWorld).invert(), N = f.clone().applyMatrix3(inv).normalize();
+      const rn = 0.014 * k, Q = new THREE.Vector3(), O = new THREE.Vector3(), orig = P.array.slice();
+      for (const ti of [best[0][1], best[1][1]]) {
+        const t0 = L(ti), c = new THREE.Vector3(); let n = 0;          // centre : moyenne des points du bout du téton
+        for (let i = 0; i < P.count; i++) { Q.set(orig[3 * i], orig[3 * i + 1], orig[3 * i + 2]); if (Q.distanceTo(t0) < 0.004 * k) { c.add(Q); n++; } }
+        c.divideScalar(n || 1); const base = c.clone().addScaledVector(N, -0.01 * k);
+        for (let i = 0; i < P.count; i++) {
+          Q.set(orig[3 * i], orig[3 * i + 1], orig[3 * i + 2]); const dd = Q.distanceTo(c); if (dd > rn * 2) continue;
+          let w = 1 - dd / (rn * 2); w = w * w * (3 - 2 * w);
+          O.copy(Q).sub(base); const ax = O.dot(N); O.addScaledVector(N, -ax);
+          Q.addScaledVector(O, window.__NL ?? 0.6).addScaledVector(N, (window.__NP ?? 0.006) * k * w);
+          P.setXYZ(i, Q.x, Q.y, Q.z);
+        }
+      }
+      P.needsUpdate = true; }   // normales d'origine gardées (les recalculer casse les coutures du modèle)
+    const A = new Float32Array(P.count), a = L(best[0][1]), b = L(best[1][1]), T = new THREE.Vector3();
+    for (let i = 0; i < P.count; i++) { T.set(P.getX(i), P.getY(i), P.getZ(i)); if (Math.min(T.distanceTo(a), T.distanceTo(b)) < R * 2) A[i] = 1; }
+    m.geometry.setAttribute('aAreo', new THREE.BufferAttribute(A, 1));
+    window.__AREO = AREO; window.__areo = { R, n: A.reduce((x, y) => x + y, 0) };
+  } catch (e) { console.warn('aréoles', e); }
 }
 function cleftSetup() {
   try {
@@ -1079,7 +1141,7 @@ function onLoaded(gltf, label, isDemo) {
   if (wrSetup(vrm.scene)) $('#row-tint').hidden = true;
   try { correctivesSetup(); } catch (_) {}
   try { romSetup(vrm.scene); } catch (_) {}
-  cleftSetup(); scalpSetup();
+  areolaSetup(); cleftSetup(); scalpSetup();
   glassesOn = false;
   demoLock = !!isDemo;
   document.querySelectorAll('#row-outfit .chip').forEach((b) => b.classList.toggle('off', demoLock && b.dataset.outfit !== 'habillee'));

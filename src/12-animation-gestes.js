@@ -1,0 +1,292 @@
+/* ---------- animation ---------- */
+const clock = new THREE.Clock();
+const ARM = 1.18;             // bras le long du corps (sinon pose en T)
+let tNow = 0, nextBlink = 2.2, blinkT = -1, dblink = false, sacT = 1, sacX = 0, sacY = 0;
+// vie du visage : micro-expressions fugaces (muscles faciaux) + micro-dérive continue des sourcils
+let microT = 2 + Math.random() * 4, microName = '', microW = 0, microAge = 0, microDur = 1, microPk = 0.2;
+const MICRO = [['browFlick', 0.22, 0.7], ['smirk', 0.2, 0.9], ['relaxed', 0.3, 1.3], ['browFlick', 0.15, 0.5],
+  ['pout', 0.12, 0.6], ['faceThink', 0.3, 1.5], ['faceDoubt', 0.22, 1.1], ['faceSoft', 0.38, 1.6], ['smirk', 0.14, 0.6], ['swallow', 0.5, 0.5]];
+let emotion = null, emotionW = 0, nod = 0, mouthWas = false, mouthV = 0;
+let gest = 0;                                   // 0..1 : elle accompagne sa parole avec les mains
+let gazeNext = 7, gazeT = 0, gazeX = 0, gazeY = 0, gazeCX = 0, gazeCY = 0;   // regard qui se détourne par moments
+// ── corps vivant : respiration réelle (inspiration vive, expiration plus longue, soupirs) + balancement postural ──
+let brPh = Math.random(), brRate = 0.25, brRateCur = 0.25, sighT = 8 + Math.random() * 10, sighW = 0;
+let swyX = 0, swyZ = 0, settleT = 4 + Math.random() * 5;   // dérive posturale lente + envie périodique de changer d'appui
+// bruit lisse déterministe [-1,1] : base organique non répétitive pour les micro-mouvements
+function vnz(x) {
+  const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f);
+  const h = (n) => { const s = Math.sin(n * 127.1) * 43758.5453; return (s - Math.floor(s)) * 2 - 1; };
+  return h(i) + (h(i + 1) - h(i)) * u;
+}
+function fbm(t, seed) { return 0.6 * vnz(t + seed) + 0.3 * vnz(t * 2.17 + seed * 1.7) + 0.15 * vnz(t * 4.3 + seed * 2.9); }
+// phase de respiration → niveau des poumons 0 (vides) .. 1 (pleins), inspiration plus courte que l'expiration
+function breathLvl(ph) {
+  const p = ph - Math.floor(ph), insp = 0.40;
+  return p < insp ? 0.5 - 0.5 * Math.cos(Math.PI * p / insp) : 0.5 + 0.5 * Math.cos(Math.PI * (p - insp) / (1 - insp));
+}
+let jigGainMul = 1, hipPrev = null;
+
+function setExpr(name, w) {
+  if (vrm && vrm.expressionManager) {
+    try { vrm.expressionManager.setValue(name, w); } catch (_) {}
+  }
+}
+function setEmotion(name) {
+  if (emotion && emotion !== name) setExpr(emotion, 0);
+  emotion = name;
+  emotionW = 1;
+  setExpr(name, 1);
+}
+/* Gestes : petits mouvements joués d'eux-mêmes (elle les choisit en parlant, ou au repos). */
+const GEST = { wave: 2.6, nod: 1.5, shake: 1.7, think: 3.4, shrug: 2.0, lean: 2.8, tilt: 2.4, laugh: 1.9, shift: 3.2, flirt: 3.4, sway: 5.5 };
+/* ── Bibliothèque de gestes « en données » ──────────────────────────────────────────────────────────────
+   Chaque geste = durée + images-clés. Une main reçoit une CIBLE : [temps (s), repère, [côté, haut, avant] en mètres].
+   Repères : head (base du crâne), sh (milieu des épaules), hips (bassin). « côté » > 0 = du côté de cette main, < 0 = en travers du corps.
+   Les bras sont calculés par cinématique inverse : épaule et coude se placent d'eux-mêmes.
+   Options : rPole/lPole (où pointe le coude), osc [axe 0|1|2, amplitude, fréquence] (mouvement répété),
+   fk [[t, {os: [x, y, z]}]] (rotation ajoutée à n'importe quel os : hips, spine, chest, head, lSh, rSh, lUpLeg, rUpLeg, lLowLeg, rLowLeg, lFoot, rFoot),
+   oscFk [os, axe, amplitude, fréquence], root [[t, [rotation, hauteur]]] (tout le corps : tourner sur elle-même, sauter, s'accroupir), step (petits pas en tournant),
+   rHand/lHand peut aussi changer au fil du temps : [[t, forme], …].
+   rTwist/lTwist (rotation du poignet, radians), rHand/lHand (forme de main : open, fist, point, v, thumb, pinch — voir HAND), head [incliner avant, tourner, pencher] et spine [avant, côté] en radians, face [expression, poids], body (geste du corps joué en même temps).
+   Ajouter un geste = ajouter une entrée ici, ou aiko.defineGesture('nom', {...}) depuis la console. */
+const GLIB = {
+  hip:     { dur: 7.0, l: [[0, 'hips', [0.175, 0.07, 0.0]]], lPole: [1, -0.2, -0.6] },
+  hips:    { dur: 5.0, r: [[0, 'hips', [0.175, 0.07, 0.0]]], l: [[0, 'hips', [0.175, 0.07, 0.0]]], rPole: [1, -0.2, -0.6], lPole: [1, -0.2, -0.6], head: [-0.04, 0, 0.06], spine: [-0.03, 0] },
+  hair:    { dur: 3.2, r: [[0, 'head', [0.10, 0.09, 0.04]], [1.0, 'head', [0.095, 0.06, -0.01]], [2.2, 'head', [0.10, 0.0, -0.05]]], rPole: [1, 0.1, -0.2], head: [0.03, -0.12, -0.12] },
+  kiss:    { dur: 2.6, r: [[0, 'head', [0.03, -0.11, 0.15]], [1.1, 'head', [0.03, -0.11, 0.15]], [1.6, 'head', [0.16, -0.05, 0.5]]], rPole: [0.4, -1, -0.1], rTwist: -1.2, head: [-0.03, 0, 0.08], face: ['kiss', 1] },
+  chin:    { dur: 3.6, r: [[0, 'head', [0.0, -0.035, 0.13]]], rPole: [0.6, -1, 0.2], head: [-0.05, 0.05, 0.12], face: ['relaxed', 0.7] },
+  cheek:   { dur: 3.0, r: [[0, 'head', [0.075, 0.0, 0.10]]], rPole: [0.6, -1, 0], head: [0.02, 0, 0.16], face: ['happy', 0.5] },
+  giggle:  { dur: 2.4, r: [[0, 'head', [0.03, -0.11, 0.15]]], rPole: [0.4, -1, 0], rTwist: -1.2, head: [0.08, 0.1, 0.06], face: ['happy', 1], body: 'laugh' },
+  heart:   { dur: 3.0, r: [[0, 'sh', [-0.07, -0.1, 0.19]]], rPole: [1, -0.8, 0], head: [0.04, 0, 0.08], face: ['relaxed', 1] },
+  point:   { dur: 2.2, r: [[0, 'sh', [0.12, 0.0, 0.56]]], rPole: [1, -0.5, 0], head: [-0.03, 0, 0], rHand: 'point' },
+  peace:   { dur: 2.6, r: [[0, 'head', [0.2, -0.02, 0.17]]], rPole: [1, -1, 0], rTwist: -1.4, rHand: 'v', head: [0, -0.08, -0.1], face: ['happy', 1] },
+  thumbsup:{ dur: 2.4, r: [[0, 'sh', [0.17, -0.12, 0.25]]], rPole: [1, -1, 0], rHand: 'thumb', face: ['happy', 0.8], body: 'nod' },
+  shh:     { dur: 2.4, r: [[0, 'head', [0.035, -0.135, 0.18]]], rPole: [0.4, -1, 0], rTwist: -1.2, rHand: 'point', head: [0.05, 0, 0.05], face: ['kiss', 0.5] },
+  yes:     { dur: 1.8, r: [[0, 'sh', [0.17, -0.12, 0.25]], [0.5, 'sh', [0.17, -0.02, 0.25]], [0.75, 'sh', [0.17, -0.2, 0.22]]], rPole: [1, -1, 0], rHand: 'fist', face: ['happy', 1] },
+  wink:    { dur: 1.6, head: [0.02, 0.06, 0.12], face: ['wink', 1] },
+  browup:  { dur: 1.4, head: [-0.04, 0, 0], face: ['browUp', 1] },
+  pout:    { dur: 2.2, head: [0.05, 0.1, 0.08], face: ['pout', 1] },
+  smirk:   { dur: 2.2, head: [-0.02, -0.08, -0.06], face: ['smirk', 1] },
+  lipbite: { dur: 2.2, head: [0.06, 0.08, 0.1], face: ['lipbite', 1] },
+  eyeroll: { dur: 1.8, head: [-0.08, 0.05, 0.06], face: ['eyeroll', 1] },
+  yawn:    { dur: 3.0, r: [[0, 'head', [0.03, -0.12, 0.16]]], rPole: [0.4, -1, 0], rTwist: -1.2, head: [-0.14, 0, 0], spine: [-0.05, 0], face: ['yawn', 1] },
+  // ---- mouvements absents des bases libres : composés articulation par articulation ----
+  twerk:   { dur: 7.0, ground: 1, root: [[0, [0, 0]], [0.7, [0, -0.2]], [6.3, [0, -0.2]], [7.0, [0, 0]]],
+             fk: [[0, {}], [0.7, { lUpLeg: [-0.85, 0, 0.24], rUpLeg: [-0.85, 0, -0.24], lLowLeg: [1.35, 0, 0], rLowLeg: [1.35, 0, 0], lFoot: [-0.45, 0, 0], rFoot: [-0.45, 0, 0], spine: [0.42, 0, 0], chest: [0.12, 0, 0] }],
+                  [6.3, { lUpLeg: [-0.85, 0, 0.24], rUpLeg: [-0.85, 0, -0.24], lLowLeg: [1.35, 0, 0], rLowLeg: [1.35, 0, 0], lFoot: [-0.45, 0, 0], rFoot: [-0.45, 0, 0], spine: [0.42, 0, 0], chest: [0.12, 0, 0] }], [7.0, {}]],
+             iso: [['hips', 0, 0.2, 15.7], ['spine', 0, -0.12, 15.7], ['hips', 2, 0.04, 7.85]], oscRoot: [0.012, 15.7],
+             r: [[0, 'hips', [0.2, -0.36, 0.3]]], l: [[0, 'hips', [0.2, -0.36, 0.3]]], rPole: [1, 0, -0.3], lPole: [1, 0, -0.3], rHand: 'open', lHand: 'open', head: [-0.1, 0, 0], face: ['flirt', 0.8], butt: [0.32, 15.7, 0.22, -0.6, 0.25] },
+  belly:   { dur: 8.0, fk: [[0, {}], [0.6, { lUpLeg: [-0.12, 0, 0], rUpLeg: [-0.12, 0, 0], lLowLeg: [0.22, 0, 0], rLowLeg: [0.22, 0, 0] }], [7.4, { lUpLeg: [-0.12, 0, 0], rUpLeg: [-0.12, 0, 0], lLowLeg: [0.22, 0, 0], rLowLeg: [0.22, 0, 0] }], [8.0, {}]],
+             iso: [['hips', 2, 0.14, 3.6], ['hips', 0, 0.1, 3.6, 1.571], ['chest', 2, -0.08, 3.6], ['chest', 1, 0.06, 1.8], ['hips', 1, 0.05, 1.8, 0.8]],
+             r: [[0, 'sh', [0.45, 0.25, 0.05]], [2, 'head', [0.35, 0.15, 0.08]], [4, 'sh', [0.45, 0.25, 0.05]], [6, 'head', [0.35, 0.15, 0.08]]], l: [[0, 'sh', [0.45, 0.25, 0.05]], [2, 'head', [0.35, 0.15, 0.08]], [4, 'sh', [0.45, 0.25, 0.05]], [6, 'head', [0.35, 0.15, 0.08]]],
+             rPole: [0, -1, 0], lPole: [0, -1, 0], rHand: 'open', lHand: 'open', face: ['flirt', 0.7] },
+  shimmy:  { dur: 4.0, fk: [[0, {}], [0.4, { lLowLeg: [0.18, 0, 0], rLowLeg: [0.18, 0, 0] }], [3.6, { lLowLeg: [0.18, 0, 0], rLowLeg: [0.18, 0, 0] }], [4.0, {}]],
+             iso: [['hips', 1, 0.09, 26], ['lUpLeg', 0, 0.08, 26], ['rUpLeg', 0, -0.08, 26], ['chest', 1, 0.05, 26, 3.14]],
+             r: [[0, 'sh', [0.4, 0.05, 0.1]]], l: [[0, 'sh', [0.4, 0.05, 0.1]]], rPole: [0, -1, 0], lPole: [0, -1, 0], face: ['happy', 0.8] },
+  split:   { dur: 7.0, ground: 1, root: [[0, [0, 0]], [1.6, [0, -0.9]], [5.0, [0, -0.9]], [6.6, [0, 0]], [7.0, [0, 0]]],
+             fk: [[0, {}], [1.6, { hips: [0.5, 0, 0], lUpLeg: [-2.14, -0.1, 0], rUpLeg: [1.04, -0.08, 0], lLowLeg: [0, 0, 0], rLowLeg: [0.05, 0, 0], lFoot: [0.6, 0, 0], rFoot: [0.5, 0, 0], spine: [-0.5, 0, 0] }],
+                  [5.0, { hips: [0.5, 0, 0], lUpLeg: [-2.14, -0.1, 0], rUpLeg: [1.04, -0.08, 0], lLowLeg: [0, 0, 0], rLowLeg: [0.05, 0, 0], lFoot: [0.6, 0, 0], rFoot: [0.5, 0, 0], spine: [-0.5, 0, 0] }], [6.6, {}], [7.0, {}]],
+             r: [[0, 'sh', [0.55, 0.05, 0.05]]], l: [[0, 'sh', [0.55, 0.05, 0.05]]], rPole: [0, -1, 0], lPole: [0, -1, 0], rHand: 'open', lHand: 'open', face: ['happy', 0.6] },
+  splitside: { dur: 8.0, ground: 1, fk: [[0, {}], [1.2, { lUpLeg: [-0.9, 0, -0.75], rUpLeg: [-0.9, 0, 0.75], lLowLeg: [1.3, 0, 0], rLowLeg: [1.3, 0, 0], hips: [0.2, 0, 0], spine: [0.15, 0, 0] }], [2.6, { hips: [0.38, 0, 0], lUpLeg: [-0.35, -0.35, -1.38], rUpLeg: [-0.35, 0.35, 1.38], lLowLeg: [0.05, 0, 0], rLowLeg: [0.05, 0, 0], lFoot: [0.5, 0, 0], rFoot: [0.5, 0, 0], spine: [0.12, 0, 0], chest: [0.05, 0, 0] }], [5.6, { hips: [0.38, 0, 0], lUpLeg: [-0.35, -0.35, -1.38], rUpLeg: [-0.35, 0.35, 1.38], lLowLeg: [0.05, 0, 0], rLowLeg: [0.05, 0, 0], lFoot: [0.5, 0, 0], rFoot: [0.5, 0, 0], spine: [0.12, 0, 0], chest: [0.05, 0, 0] }],
+               [6.8, { lUpLeg: [-0.9, 0, -0.75], rUpLeg: [-0.9, 0, 0.75], lLowLeg: [1.3, 0, 0], rLowLeg: [1.3, 0, 0], hips: [0.2, 0, 0], spine: [0.15, 0, 0] }], [8.0, {}]],
+             iso: [['hips', 0, 0.04, 1.2]], r: [[0, 'hips', [0.2, 0.0, 0.1]], [1.4, 'fl', [0.14, 0, 0.32]], [5.8, 'fl', [0.14, 0, 0.32]], [6.9, 'hips', [0.2, 0.0, 0.12]]], l: [[0, 'hips', [0.2, 0.0, 0.1]], [1.4, 'fl', [0.14, 0, 0.32]], [5.8, 'fl', [0.14, 0, 0.32]], [6.9, 'hips', [0.2, 0.0, 0.12]]],
+             rPole: [1, 0, -0.8], lPole: [1, 0, -0.8], rTwist: 1.6, lTwist: 1.6, rWrist: [0, 0, -1.3], lWrist: [0, 0, -1.3], rHand: 'main-plate', lHand: 'main-plate', head: [-0.12, 0, 0.05], face: ['happy', 0.6] },
+  kiba:    { dur: 4.0, ground: 1, root: [[0, [0, 0]], [0.5, [0, -0.16]], [3.5, [0, -0.16]], [4.0, [0, 0]]],
+             fk: [[0, {}], [0.5, { lUpLeg: [-0.75, 0, -0.32], rUpLeg: [-0.75, 0, 0.32], lLowLeg: [1.1, 0, 0], rLowLeg: [1.1, 0, 0], lFoot: [-0.3, 0, 0], rFoot: [-0.3, 0, 0] }], [3.5, { lUpLeg: [-0.75, 0, -0.32], rUpLeg: [-0.75, 0, 0.32], lLowLeg: [1.1, 0, 0], rLowLeg: [1.1, 0, 0], lFoot: [-0.3, 0, 0], rFoot: [-0.3, 0, 0] }], [4.0, {}]],
+             r: [[0, 'hips', [0.12, 0.05, 0.12]], [1.4, 'sh', [0.0, -0.05, 0.62]], [2.2, 'hips', [0.12, 0.05, 0.12]]], l: [[0, 'hips', [0.12, 0.05, 0.12]], [2.4, 'sh', [0.0, -0.05, 0.62]], [3.2, 'hips', [0.12, 0.05, 0.12]]],
+             rPole: [1, -0.5, 0], lPole: [1, -0.5, 0], rHand: 'fist', lHand: 'fist', face: ['angry', 0.5] },
+  // ── gestuelle sensuelle (élégante, jamais explicite) ──
+  neck:      { dur: 4.0, r: [[0, 'head', [0.05, -0.10, 0.05]], [1.3, 'head', [0.045, -0.17, 0.06]], [2.6, 'sh', [0.07, 0.01, 0.09]], [3.4, 'sh', [0.10, -0.03, 0.08]]], rPole: [0.8, -1, -0.2], rTwist: -0.4, rHand: 'main-detendue',
+               head: [-0.12, 0.12, 0.16], iso: [['hips', 2, 0.04, 1.6]], face: ['relaxed', 0.9] },
+  hairboth:  { dur: 4.4, r: [[0, 'head', [0.09, 0.10, 0.0]], [2.0, 'head', [0.07, 0.15, -0.06]], [3.6, 'head', [0.10, 0.08, -0.03]]], l: [[0, 'head', [0.09, 0.10, 0.0]], [2.2, 'head', [0.07, 0.15, -0.06]], [3.8, 'head', [0.10, 0.08, -0.03]]],
+               rPole: [1, 0.2, -0.3], lPole: [1, 0.2, -0.3], rHand: 'main-detendue', lHand: 'main-detendue', head: [-0.12, 0, 0.06], spine: [-0.08, 0], iso: [['hips', 2, 0.06, 1.5], ['chest', 2, -0.03, 1.5]], face: ['relaxed', 1] },
+  waist:     { dur: 4.4, r: [[0, 'sh', [0.17, -0.24, 0.05]], [1.6, 'hips', [0.18, 0.10, 0.03]], [3.0, 'hips', [0.19, -0.08, 0.04]]], l: [[0, 'sh', [0.17, -0.24, 0.05]], [1.7, 'hips', [0.18, 0.10, 0.03]], [3.1, 'hips', [0.19, -0.08, 0.04]]],
+               rPole: [1, -0.3, -0.5], lPole: [1, -0.3, -0.5], rHand: 'main-plate', lHand: 'main-plate', head: [0.06, -0.1, 0.1], iso: [['hips', 2, 0.07, 1.4], ['chest', 2, -0.04, 1.4]], face: ['smirk', 0.8] },
+  hiproll:   { dur: 6.0, r: [[0, 'hips', [0.175, 0.07, 0.0]]], l: [[0, 'hips', [0.175, 0.07, 0.0]]], rPole: [1, -0.2, -0.6], lPole: [1, -0.2, -0.6],
+               fk: [[0, {}], [0.6, { lLowLeg: [0.12, 0, 0], rLowLeg: [0.12, 0, 0], lUpLeg: [-0.06, 0, 0], rUpLeg: [-0.06, 0, 0] }], [5.4, { lLowLeg: [0.12, 0, 0], rLowLeg: [0.12, 0, 0], lUpLeg: [-0.06, 0, 0], rUpLeg: [-0.06, 0, 0] }], [6.0, {}]],
+               iso: [['hips', 1, 0.13, 2.1], ['hips', 2, 0.09, 2.1, 1.571], ['chest', 1, -0.07, 2.1], ['chest', 2, -0.05, 2.1, 1.571]], head: [-0.03, 0, 0.05], face: ['smirk', 0.7] },
+  bodyroll:  { dur: 5.2, fk: [[0, {}], [0.6, { lLowLeg: [0.18, 0, 0], rLowLeg: [0.18, 0, 0], lUpLeg: [-0.09, 0, 0], rUpLeg: [-0.09, 0, 0] }], [4.6, { lLowLeg: [0.18, 0, 0], rLowLeg: [0.18, 0, 0], lUpLeg: [-0.09, 0, 0], rUpLeg: [-0.09, 0, 0] }], [5.2, {}]],
+               iso: [['chest', 0, 0.11, 2.4], ['spine', 0, 0.08, 2.4, -0.9], ['hips', 0, 0.12, 2.4, -1.8], ['neck', 0, -0.06, 2.4, 0.6]], oscRoot: [0.02, 2.4],
+               r: [[0, 'hips', [0.18, 0.02, 0.06]]], l: [[0, 'hips', [0.18, 0.02, 0.06]]], rPole: [1, -0.3, -0.4], lPole: [1, -0.3, -0.4], rHand: 'main-detendue', lHand: 'main-detendue', face: ['relaxed', 0.8] },
+  overshoulder: { dur: 4.2, fk: [[0, {}], [1.0, { hips: [0, 0.4, 0], chest: [0, 0.2, 0], neck: [0, -0.75, 0.08] }], [3.2, { hips: [0, 0.4, 0], chest: [0, 0.2, 0], neck: [0, -0.75, 0.08] }], [4.2, {}]],
+               l: [[0, 'hips', [0.175, 0.07, 0.0]]], lPole: [1, -0.2, -0.6], head: [0.08, -0.55, 0.14], face: ['smirk', 1] },
+  shoulderroll: { dur: 4.0, r: [[0, 'hips', [0.19, -0.1, 0.03]]], l: [[0, 'hips', [0.19, -0.1, 0.03]]], rPole: [1, -0.3, -0.4], lPole: [1, -0.3, -0.4], rHand: 'main-detendue', lHand: 'main-detendue', iso: [['lSh', 2, 0.09, 2.6], ['rSh', 2, -0.09, 2.6, 3.14], ['chest', 1, 0.06, 2.6], ['hips', 1, -0.04, 2.6]], head: [-0.02, 0.08, 0.08], face: ['smirk', 0.8] },
+  fingerlip: { dur: 3.2, r: [[0, 'head', [0.012, -0.105, 0.125]]], rPole: [0.5, -1, 0.1], rTwist: -0.6, rHand: 'compte-1', head: [0.06, 0.05, 0.1], face: ['lipbite', 0.9] },
+  strap:     { dur: 3.4, r: [[0, 'sh', [0.14, 0.05, 0.05]], [1.4, 'sh', [0.15, 0.0, 0.07]], [2.4, 'sh', [0.14, 0.04, 0.05]]], rPole: [1, -1, 0.2], rHand: 'pince',
+               head: [0.08, -0.25, 0.12], face: ['smirk', 0.9] },
+  archstretch: { dur: 4.2, r: [[0, 'head', [0.03, 0.36, -0.03]]], l: [[0, 'head', [0.03, 0.36, -0.03]]], rPole: [1, 0, 0], lPole: [1, 0, 0], rHand: 'main-detendue', lHand: 'main-detendue',
+               fk: [[0, {}], [1.2, { chest: [-0.12, 0, 0], spine: [-0.08, 0, 0] }], [3.2, { chest: [-0.12, 0, 0], spine: [-0.08, 0, 0] }], [4.2, {}]], iso: [['hips', 2, 0.05, 1.6]], head: [-0.14, 0, 0.04], face: ['relaxed', 1] },
+  hairflip:  { dur: 2.6, r: [[0, 'head', [0.10, 0.05, 0.03]], [0.8, 'head', [0.13, 0.11, -0.07]], [1.6, 'sh', [0.22, -0.3, 0.05]]], rPole: [1, 0.1, -0.2], rHand: 'main-detendue',
+               iso: [['neck', 1, 0.22, 4.0]], head: [-0.06, 0, 0.1], face: ['smirk', 1] },
+  thigh:     { dur: 5.0, r: [[0, 'hips', [0.17, -0.02, 0.09]], [2.0, 'hips', [0.15, -0.34, 0.11]], [3.6, 'hips', [0.17, -0.02, 0.09]]], l: [[0, 'hips', [0.17, -0.02, 0.09]], [2.1, 'hips', [0.15, -0.34, 0.11]], [3.7, 'hips', [0.17, -0.02, 0.09]]],
+               rPole: [1, 0, -0.6], lPole: [1, 0, -0.6], rHand: 'main-plate', lHand: 'main-plate',
+               fk: [[0, {}], [2.0, { spine: [0.22, 0, 0], chest: [0.1, 0, 0], lLowLeg: [0.15, 0, 0], rLowLeg: [0.15, 0, 0], lUpLeg: [-0.12, 0, 0], rUpLeg: [-0.12, 0, 0] }], [3.8, { spine: [-0.06, 0, 0], chest: [-0.06, 0, 0] }], [5.0, {}]],
+               iso: [['hips', 2, 0.06, 1.3]], head: [0.08, 0, 0.08], face: ['lipbite', 0.9] },
+  kneelarch: { dur: 7.0, ground: 1, root: [[0, [0, 0]], [1.6, [0, -0.47]], [5.6, [0, -0.47]], [7.0, [0, 0]]],
+               fk: [[0, {}], [1.6, { lLowLeg: [1.65, 0, 0], rLowLeg: [1.65, 0, 0], lUpLeg: [0.05, 0, -0.08], rUpLeg: [0.05, 0, 0.08], lFoot: [0.8, 0, 0], rFoot: [0.8, 0, 0], spine: [-0.14, 0, 0], chest: [-0.1, 0, 0] }],
+                    [5.6, { lLowLeg: [1.65, 0, 0], rLowLeg: [1.65, 0, 0], lUpLeg: [0.05, 0, -0.08], rUpLeg: [0.05, 0, 0.08], lFoot: [0.8, 0, 0], rFoot: [0.8, 0, 0], spine: [-0.14, 0, 0], chest: [-0.1, 0, 0] }], [7.0, {}]],
+               r: [[0, 'hips', [0.18, 0.0, 0.05]], [2.4, 'head', [0.095, 0.12, -0.07]]], l: [[0, 'hips', [0.18, 0.0, 0.05]], [2.6, 'head', [0.095, 0.12, -0.07]]], rPole: [1, 0.2, -0.3], lPole: [1, 0.2, -0.3],
+               rHand: 'main-detendue', lHand: 'main-detendue', iso: [['hips', 2, 0.05, 1.4]], head: [-0.12, 0, 0.06], face: ['relaxed', 1] },
+  dropdown:  { dur: 6.0, ground: 1, root: [[0, [0, 0]], [2.0, [0, -0.36]], [3.0, [0, -0.36]], [5.2, [0, 0]], [6.0, [0, 0]]],
+               fk: [[0, {}], [2.0, { lUpLeg: [-1.2, 0, -0.8], rUpLeg: [-1.2, 0, 0.8], lLowLeg: [2.0, 0, 0], rLowLeg: [2.0, 0, 0], lFoot: [-0.55, 0, 0], rFoot: [-0.55, 0, 0], spine: [0.15, 0, 0], chest: [-0.12, 0, 0] }],
+                    [3.0, { lUpLeg: [-1.2, 0, -0.8], rUpLeg: [-1.2, 0, 0.8], lLowLeg: [2.0, 0, 0], rLowLeg: [2.0, 0, 0], lFoot: [-0.55, 0, 0], rFoot: [-0.55, 0, 0], spine: [0.15, 0, 0], chest: [-0.12, 0, 0] }],
+                    [4.2, { lUpLeg: [-0.5, 0, -0.1], rUpLeg: [-0.5, 0, 0.1], lLowLeg: [0.8, 0, 0], rLowLeg: [0.8, 0, 0], hips: [0.25, 0, 0], spine: [-0.1, 0, 0], chest: [-0.12, 0, 0] }], [6.0, {}]],
+               r: [[0, 'hips', [0.17, 0.0, 0.08]], [2.0, 'hips', [0.34, -0.2, 0.3]], [3.2, 'hips', [0.32, -0.15, 0.24]], [4.6, 'hips', [0.17, 0.02, 0.08]]],
+               l: [[0, 'hips', [0.17, 0.0, 0.08]], [2.0, 'hips', [0.34, -0.2, 0.3]], [3.2, 'hips', [0.32, -0.15, 0.24]], [4.6, 'hips', [0.17, 0.02, 0.08]]],
+               rPole: [1, -0.2, 0.2], lPole: [1, -0.2, 0.2], rHand: 'main-plate', lHand: 'main-plate', head: [-0.05, 0, 0.06], face: ['smirk', 1] },
+  slowdance: { dur: 9.0, fk: [[0, {}], [0.8, { lLowLeg: [0.16, 0, 0], rLowLeg: [0.16, 0, 0], lUpLeg: [-0.08, 0, 0], rUpLeg: [-0.08, 0, 0] }], [8.2, { lLowLeg: [0.16, 0, 0], rLowLeg: [0.16, 0, 0], lUpLeg: [-0.08, 0, 0], rUpLeg: [-0.08, 0, 0] }], [9.0, {}]],
+               iso: [['hips', 2, 0.12, 1.75], ['hips', 1, 0.1, 1.75, 1.571], ['chest', 2, -0.07, 1.75], ['chest', 0, 0.06, 3.5], ['hips', 0, 0.06, 3.5, 2.2]], oscRoot: [0.018, 3.5],
+               r: [[0, 'hips', [0.18, 0.04, 0.04]], [2.5, 'head', [0.1, 0.12, 0.0]], [5.0, 'sh', [0.3, 0.35, 0.15]], [7.0, 'hips', [0.18, -0.08, 0.06]]],
+               l: [[0, 'head', [0.1, 0.12, 0.0]], [2.5, 'hips', [0.18, -0.06, 0.06]], [5.0, 'hips', [0.18, 0.04, 0.04]], [7.0, 'head', [0.1, 0.12, 0.0]]],
+               rPole: [1, -0.1, -0.4], lPole: [1, -0.1, -0.4], rHand: 'main-detendue', lHand: 'main-detendue', head: [-0.06, 0, 0.1], face: ['relaxed', 1] },
+  // ── coach : yoga et exercices au sol (appui au sol automatique, mains à plat) ──
+  planche: { dur: 8.0, ground: 1, fk: [[0, {}], [1.4, { hips: [1.2, 0, 0], lFoot: [-0.6, 0, 0], rFoot: [-0.6, 0, 0] }], [6.6, { hips: [1.2, 0, 0], lFoot: [-0.6, 0, 0], rFoot: [-0.6, 0, 0] }], [8, {}]], r: [[0, 'fl', [0.17, 0, 0.0]]], l: [[0, 'fl', [0.17, 0, 0.0]]], rPole: [1, 0, -1], lPole: [1, 0, -1], rTwist: 1.6, lTwist: 1.6, rWrist: [0, 0, -1.3], lWrist: [0, 0, -1.3], rHand: 'main-plate', lHand: 'main-plate', face: ['neutral', 1] },
+  pompes: { dur: 8.0, ground: 1, fk: [[0, {}], [1.4, { hips: [1.2, 0, 0], lFoot: [-0.6, 0, 0], rFoot: [-0.6, 0, 0] }], [6.6, { hips: [1.2, 0, 0], lFoot: [-0.6, 0, 0], rFoot: [-0.6, 0, 0] }], [8, {}]], iso: [['hips', 0, 0.11, 2.6, -1.571]], r: [[0, 'fl', [0.24, 0, 0.0]]], l: [[0, 'fl', [0.24, 0, 0.0]]], rPole: [1, 0.3, -0.6], lPole: [1, 0.3, -0.6], rTwist: 1.6, lTwist: 1.6, rWrist: [0, 0, -1.3], lWrist: [0, 0, -1.3], rHand: 'main-plate', lHand: 'main-plate', face: ['neutral', 1] },
+  chien: { dur: 8.0, ground: 1, fk: [[0, {}], [1.4, { hips: [2.3, 0, 0], lUpLeg: [-1.55, 0, 0], rUpLeg: [-1.55, 0, 0], lFoot: [-0.45, 0, 0], rFoot: [-0.45, 0, 0], spine: [-0.1, 0, 0] }], [6.6, { hips: [2.3, 0, 0], lUpLeg: [-1.55, 0, 0], rUpLeg: [-1.55, 0, 0], lFoot: [-0.45, 0, 0], rFoot: [-0.45, 0, 0], spine: [-0.1, 0, 0] }], [8, {}]], r: [[0, 'fl', [0.16, 0, 0.45]]], l: [[0, 'fl', [0.16, 0, 0.45]]], rPole: [1, 0, -1], lPole: [1, 0, -1], rTwist: 1.6, lTwist: 1.6, rWrist: [0, 0, -1.3], lWrist: [0, 0, -1.3], rHand: 'main-plate', lHand: 'main-plate', head: [0.1, 0, 0] },
+  cobra: { dur: 8.0, ground: 1, fk: [[0, {}], [1.4, { hips: [1.57, 0, 0], spine: [-0.45, 0, 0], chest: [-0.35, 0, 0], lFoot: [0.9, 0, 0], rFoot: [0.9, 0, 0] }], [6.6, { hips: [1.57, 0, 0], spine: [-0.45, 0, 0], chest: [-0.35, 0, 0], lFoot: [0.9, 0, 0], rFoot: [0.9, 0, 0] }], [8, {}]], r: [[0, 'fl', [0.2, 0, -0.05]]], l: [[0, 'fl', [0.2, 0, -0.05]]], rPole: [1, 0, -1], lPole: [1, 0, -1], rTwist: 1.6, lTwist: 1.6, rWrist: [0, 0, -1.3], lWrist: [0, 0, -1.3], rHand: 'main-plate', lHand: 'main-plate', head: [-0.2, 0, 0] },
+  enfant: { dur: 8.0, ground: 1, fk: [[0, {}], [1.4, { hips: [1.6, 0, 0], lUpLeg: [-2.38, 0, -0.12], rUpLeg: [-2.38, 0, 0.12], lLowLeg: [2.35, 0, 0], rLowLeg: [2.35, 0, 0], lFoot: [0.9, 0, 0], rFoot: [0.9, 0, 0], spine: [0.3, 0, 0], chest: [0.15, 0, 0] }], [6.6, { hips: [1.6, 0, 0], lUpLeg: [-2.38, 0, -0.12], rUpLeg: [-2.38, 0, 0.12], lLowLeg: [2.35, 0, 0], rLowLeg: [2.35, 0, 0], lFoot: [0.9, 0, 0], rFoot: [0.9, 0, 0], spine: [0.3, 0, 0], chest: [0.15, 0, 0] }], [8, {}]], r: [[0, 'fl', [0.12, 0, 0.5]]], l: [[0, 'fl', [0.12, 0, 0.5]]], rPole: [1, 0, -1], lPole: [1, 0, -1], rTwist: 1.6, lTwist: 1.6, rWrist: [0, 0, -1.3], lWrist: [0, 0, -1.3], rHand: 'main-plate', lHand: 'main-plate', head: [0.2, 0, 0] },
+  arbre: { dur: 8.0, ground: 1, fk: [[0, {}], [1.4, { rUpLeg: [-0.55, 0.5, 0.95], rLowLeg: [2.3, 0, 0], rFoot: [0.5, 0, 0] }], [6.6, { rUpLeg: [-0.55, 0.5, 0.95], rLowLeg: [2.3, 0, 0], rFoot: [0.5, 0, 0] }], [8, {}]], r: [[0, 'head', [0.0, 0.3, 0.02]]], l: [[0, 'head', [0.0, 0.3, 0.02]]], rPole: [1, 0, 0], lPole: [1, 0, 0], rHand: 'main-plate', lHand: 'main-plate', face: ['relaxed', 0.8] },
+  guerrier2: { dur: 8.0, ground: 1, fk: [[0, {}], [1.4, { rUpLeg: [-0.25, 0, 0.75], rLowLeg: [1.1, 0, 0], lUpLeg: [0, 0, -0.55], rFoot: [-0.3, 0, -0.3], lFoot: [0, 0, 0.3] }], [6.6, { rUpLeg: [-0.25, 0, 0.75], rLowLeg: [1.1, 0, 0], lUpLeg: [0, 0, -0.55], rFoot: [-0.3, 0, -0.3], lFoot: [0, 0, 0.3] }], [8, {}]], r: [[0, 'sh', [0.78, 0.0, 0.0]]], l: [[0, 'sh', [0.78, 0.0, 0.0]]], rPole: [0, -1, 0], lPole: [0, -1, 0], rHand: 'main-plate', lHand: 'main-plate', head: [0, -0.8, 0], face: ['neutral', 1] },
+  abdos: { dur: 8.0, ground: 1, fk: [[0, {}], [1.4, { hips: [-1.57, 0, 0], lUpLeg: [-1.0, 0, 0], rUpLeg: [-1.0, 0, 0], lLowLeg: [1.9, 0, 0], rLowLeg: [1.9, 0, 0], lFoot: [-0.3, 0, 0], rFoot: [-0.3, 0, 0] }], [6.6, { hips: [-1.57, 0, 0], lUpLeg: [-1.0, 0, 0], rUpLeg: [-1.0, 0, 0], lLowLeg: [1.9, 0, 0], rLowLeg: [1.9, 0, 0], lFoot: [-0.3, 0, 0], rFoot: [-0.3, 0, 0] }], [8, {}]], iso: [['spine', 0, 0.28, 2.4, -1.571], ['chest', 0, 0.2, 2.4, -1.571]], r: [[0, 'head', [0.08, 0.04, -0.09]]], l: [[0, 'head', [0.08, 0.04, -0.09]]], rPole: [1, 0.5, 0], lPole: [1, 0.5, 0], rHand: 'main-detendue', lHand: 'main-detendue' },
+  // ── poses audacieuses (appui au sol automatique) ──
+  chat: { dur: 9.0, ground: 1, fk: [[0, {}], [1.4, { hips: [1.45, 0, 0], lUpLeg: [-1.5, 0, -0.08], rUpLeg: [-1.5, 0, 0.08], lLowLeg: [1.57, 0, 0], rLowLeg: [1.57, 0, 0], lFoot: [0.9, 0, 0], rFoot: [0.9, 0, 0], spine: [-0.25, 0, 0], chest: [-0.15, 0, 0], neck: [-0.2, -0.5, 0] }], [7.8, { hips: [1.45, 0, 0], lUpLeg: [-1.5, 0, -0.08], rUpLeg: [-1.5, 0, 0.08], lLowLeg: [1.57, 0, 0], rLowLeg: [1.57, 0, 0], lFoot: [0.9, 0, 0], rFoot: [0.9, 0, 0], spine: [-0.25, 0, 0], chest: [-0.15, 0, 0], neck: [-0.2, -0.5, 0] }], [9.0, {}]], r: [[0, 'fl', [0.17, 0, 0.0]]], l: [[0, 'fl', [0.17, 0, 0.0]]], rPole: [1, 0, -1], lPole: [1, 0, -1], rTwist: 1.6, lTwist: 1.6, rWrist: [0, 0, -1.3], lWrist: [0, 0, -1.3], rHand: 'main-plate', lHand: 'main-plate', iso: [['hips', 2, 0.07, 1.3], ['hips', 1, 0.05, 1.3, 1.571]], head: [-0.1, -0.35, 0.1], face: ['smirk', 1] },
+  twerk4: { dur: 8.0, ground: 1, fk: [[0, {}], [1.4, { hips: [1.45, 0, 0], lUpLeg: [-1.5, 0, -0.08], rUpLeg: [-1.5, 0, 0.08], lLowLeg: [1.57, 0, 0], rLowLeg: [1.57, 0, 0], lFoot: [0.9, 0, 0], rFoot: [0.9, 0, 0], spine: [-0.25, 0, 0], chest: [-0.15, 0, 0], neck: [-0.35, -0.7, 0] }], [7.0, { hips: [1.45, 0, 0], lUpLeg: [-1.5, 0, -0.08], rUpLeg: [-1.5, 0, 0.08], lLowLeg: [1.57, 0, 0], rLowLeg: [1.57, 0, 0], lFoot: [0.9, 0, 0], rFoot: [0.9, 0, 0], spine: [-0.25, 0, 0], chest: [-0.15, 0, 0], neck: [-0.35, -0.7, 0] }], [8.0, {}]], r: [[0, 'fl', [0.17, 0, 0.0]]], l: [[0, 'fl', [0.17, 0, 0.0]]], rPole: [1, 0, -1], lPole: [1, 0, -1], rTwist: 1.6, lTwist: 1.6, rWrist: [0, 0, -1.3], lWrist: [0, 0, -1.3], rHand: 'main-plate', lHand: 'main-plate', iso: [['hips', 0, 0.17, 15.7], ['spine', 0, -0.12, 15.7], ['chest', 0, -0.04, 15.7], ['hips', 2, 0.03, 7.85]], butt: [0.32, 15.7, 0.22, -0.6, 0.25], head: [-0.1, -0.35, 0.1], face: ['flirt', 0.9] },
+  penche: { dur: 7.0, ground: 1, fk: [[0, {}], [1.4, { hips: [1.35, 0, 0], lUpLeg: [-1.25, 0, -0.06], rUpLeg: [-1.25, 0, 0.06], spine: [0.25, 0, 0], chest: [0.1, 0, 0] }], [5.8, { hips: [1.35, 0, 0], lUpLeg: [-1.25, 0, -0.06], rUpLeg: [-1.25, 0, 0.06], spine: [0.25, 0, 0], chest: [0.1, 0, 0] }], [7.0, {}]], r: [[0, 'fl', [0.14, 0.12, 0.18]]], l: [[0, 'fl', [0.14, 0.12, 0.18]]], rPole: [1, 0, -1], lPole: [1, 0, -1], rHand: 'main-detendue', lHand: 'main-detendue', iso: [['hips', 2, 0.06, 1.6]], head: [-0.3, 0, 0], face: ['smirk', 1] },
+  ventre: { dur: 9.0, ground: 1, fk: [[0, {}], [1.4, { hips: [1.57, 0, 0], spine: [-0.3, 0, 0], chest: [-0.25, 0, 0], lLowLeg: [1.6, 0, 0], rLowLeg: [1.6, 0, 0], lFoot: [0.8, 0, 0], rFoot: [0.8, 0, 0] }], [7.8, { hips: [1.57, 0, 0], spine: [-0.3, 0, 0], chest: [-0.25, 0, 0], lLowLeg: [1.6, 0, 0], rLowLeg: [1.6, 0, 0], lFoot: [0.8, 0, 0], rFoot: [0.8, 0, 0] }], [9.0, {}]], iso: [['lLowLeg', 0, 0.45, 2.4], ['rLowLeg', 0, 0.45, 2.4, 3.14]], r: [[0, 'head', [0.04, -0.14, 0.1]]], l: [[0, 'head', [0.04, -0.14, 0.1]]], rPole: [0.3, -1, -0.3], lPole: [0.3, -1, -0.3], rHand: 'main-detendue', lHand: 'main-detendue', head: [-0.25, 0, 0.08], face: ['happy', 0.8] },
+  dos: { dur: 9.0, ground: 1, fk: [[0, {}], [1.4, { hips: [-1.57, 0, 0], spine: [-0.08, 0, 0], chest: [-0.05, 0, 0], rUpLeg: [-0.7, 0, 0.1], rLowLeg: [1.3, 0, 0], lFoot: [0.6, 0, 0], rFoot: [0.3, 0, 0] }], [7.8, { hips: [-1.57, 0, 0], spine: [-0.08, 0, 0], chest: [-0.05, 0, 0], rUpLeg: [-0.7, 0, 0.1], rLowLeg: [1.3, 0, 0], lFoot: [0.6, 0, 0], rFoot: [0.3, 0, 0] }], [9.0, {}]], r: [[0, 'head', [0.12, 0.28, -0.05]]], l: [[0, 'head', [0.12, 0.28, -0.05]]], rPole: [1, 0.3, 0], lPole: [1, 0.3, 0], rHand: 'main-detendue', lHand: 'main-detendue', iso: [['hips', 2, 0.05, 1.2]], head: [-0.1, -0.3, 0], face: ['relaxed', 1] },
+  droplow:   { dur: 6.0, ground: 1, fk: [[0, {}], [2.2, { lUpLeg: [-1.5, 0, -0.55], rUpLeg: [-1.5, 0, 0.55], lLowLeg: [2.5, 0, 0], rLowLeg: [2.5, 0, 0], lFoot: [-0.7, 0, 0], rFoot: [-0.7, 0, 0], spine: [0.25, 0, 0] }],
+               [3.0, { lUpLeg: [-1.5, 0, -0.55], rUpLeg: [-1.5, 0, 0.55], lLowLeg: [2.5, 0, 0], rLowLeg: [2.5, 0, 0], lFoot: [-0.7, 0, 0], rFoot: [-0.7, 0, 0], spine: [0.25, 0, 0] }],
+               [4.3, { hips: [0.6, 0, 0], lUpLeg: [-0.9, 0, -0.15], rUpLeg: [-0.9, 0, 0.15], lLowLeg: [0.6, 0, 0], rLowLeg: [0.6, 0, 0], spine: [0.2, 0, 0] }], [6.0, {}]],
+             iso: [['hips', 2, 0.1, 3.2], ['chest', 2, -0.06, 3.2]], r: [[0, 'hips', [0.2, -0.05, 0.12]]], l: [[0, 'hips', [0.2, -0.05, 0.12]]], rPole: [1, -0.2, 0.2], lPole: [1, -0.2, 0.2], rHand: 'main-plate', lHand: 'main-plate', face: ['smirk', 1] },
+  hairwhip:  { dur: 4.0, ground: 1, fk: [[0, {}], [1.0, { lLowLeg: [1.65, 0, 0], rLowLeg: [1.65, 0, 0], lFoot: [0.8, 0, 0], rFoot: [0.8, 0, 0] }], [3.2, { lLowLeg: [1.65, 0, 0], rLowLeg: [1.65, 0, 0], lFoot: [0.8, 0, 0], rFoot: [0.8, 0, 0] }], [4.0, {}]],
+             iso: [['spine', 0, 0.3, 4.2], ['chest', 0, 0.2, 4.2, 0.4], ['neck', 0, 0.35, 4.2, 0.9]], r: [[0, 'hips', [0.18, 0.0, 0.08]]], l: [[0, 'hips', [0.18, 0.0, 0.08]]], rPole: [1, -0.2, -0.4], lPole: [1, -0.2, -0.4], face: ['relaxed', 1] },
+  viens:     { dur: 3.4, r: [[0, 'sh', [0.18, -0.02, 0.35]]], rPole: [0.6, -1, 0.2], rTwist: 1.2, rHand: [[0, 'compte-1'], [0.6, { Index: [0.9, 0.9, 0.6], Middle: 1, Ring: 1, Little: 1 }], [1.0, 'compte-1'], [1.5, { Index: [0.9, 0.9, 0.6], Middle: 1, Ring: 1, Little: 1 }], [1.9, 'compte-1']],
+             iso: [['hips', 2, 0.05, 2.0]], head: [0.06, 0.05, 0.12], face: ['wink', 0.9] },
+  effeuillage: { dur: 16.0, wear: [[3.6, ['haut_aucun', 'robe_aucun', 'maillot_aucun']], [8.4, ['bas_aucun']], [12.2, ['pieds_aucun', 'jambes_aucun']]],
+             fk: [[0, {}], [1.0, { lLowLeg: [0.14, 0, 0], rLowLeg: [0.14, 0, 0], lUpLeg: [-0.07, 0, 0], rUpLeg: [-0.07, 0, 0] }], [15.0, { lLowLeg: [0.14, 0, 0], rLowLeg: [0.14, 0, 0], lUpLeg: [-0.07, 0, 0], rUpLeg: [-0.07, 0, 0] }], [16.0, {}]],
+             iso: [['hips', 2, 0.11, 1.6], ['hips', 1, 0.08, 1.6, 1.571], ['chest', 2, -0.06, 1.6], ['chest', 0, 0.05, 3.2], ['hips', 0, 0.05, 3.2, 2.2]],
+             r: [[0, 'sh', [0.17, -0.24, 0.05]], [2.2, 'head', [0.1, 0.14, -0.02]], [3.8, 'head', [0.05, 0.3, 0.0]], [5.2, 'hips', [0.18, 0.06, 0.04]], [7.4, 'hips', [0.19, -0.08, 0.05]], [9.2, 'hips', [0.16, -0.3, 0.1]], [11.0, 'head', [0.09, 0.12, -0.04]], [13.4, 'hips', [0.175, 0.07, 0.0]]],
+             l: [[0, 'sh', [0.17, -0.24, 0.05]], [2.4, 'head', [0.1, 0.14, -0.02]], [3.8, 'head', [0.05, 0.3, 0.0]], [5.4, 'hips', [0.18, 0.06, 0.04]], [7.6, 'hips', [0.19, -0.08, 0.05]], [9.4, 'hips', [0.16, -0.3, 0.1]], [11.2, 'head', [0.09, 0.12, -0.04]], [13.4, 'hips', [0.175, 0.07, 0.0]]],
+             rPole: [1, -0.2, -0.4], lPole: [1, -0.2, -0.4], rHand: 'main-detendue', lHand: 'main-detendue', head: [-0.04, 0, 0.1], face: ['smirk', 1] },
+  // ── nudité suggérée : elle se cache avec malice ──
+  devoile:   { dur: 8.0, r: [[0, 'hips', [0.19, -0.06, 0.05]], [1.2, 'sh', [0.17, -0.24, 0.06]], [3.0, 'head', [0.1, 0.1, -0.08]]], l: [[0, 'hips', [0.19, -0.06, 0.05]], [1.3, 'sh', [0.17, -0.24, 0.06]], [3.2, 'head', [0.1, 0.1, -0.08]]],
+               rPole: [1, 0.2, -0.3], lPole: [1, 0.2, -0.3], rHand: 'main-detendue', lHand: 'main-detendue',
+               fk: [[0, {}], [3.2, { hips: [0, 0.12, 0], lUpLeg: [-0.12, 0.2, 0.08], lLowLeg: [0.35, 0, 0], lFoot: [0.3, 0, 0], spine: [-0.07, 0, 0], chest: [-0.05, 0, 0] }], [7.2, { hips: [0, 0.12, 0], lUpLeg: [-0.12, 0.2, 0.08], lLowLeg: [0.35, 0, 0], lFoot: [0.3, 0, 0], spine: [-0.07, 0, 0], chest: [-0.05, 0, 0] }], [8.0, {}]],
+               iso: [['hips', 2, 0.08, 1.3], ['chest', 2, -0.04, 1.3]], head: [-0.06, -0.1, 0.12], face: ['smirk', 1] },
+  maegeri: { dur: 3.4, fk: [[0, {}], [0.5, { lUpLeg: [-0.2, 0, 0], lLowLeg: [0.35, 0, 0] }], [1.0, { rUpLeg: [-1.45, 0, 0], rLowLeg: [1.9, 0, 0], lLowLeg: [0.3, 0, 0], spine: [-0.1, 0, 0] }], [1.35, { rUpLeg: [-1.5, 0, 0], rLowLeg: [0.15, 0, 0], rFoot: [0.6, 0, 0], lLowLeg: [0.3, 0, 0], spine: [-0.15, 0, 0] }],
+                  [1.8, { rUpLeg: [-1.45, 0, 0], rLowLeg: [1.9, 0, 0], lLowLeg: [0.3, 0, 0] }], [2.5, { lUpLeg: [-0.2, 0, 0], lLowLeg: [0.35, 0, 0] }], [3.4, {}]],
+             r: [[0, 'sh', [0.15, -0.25, 0.25]]], l: [[0, 'sh', [0.15, -0.25, 0.25]]], rPole: [1, -1, 0], lPole: [1, -1, 0], rHand: 'fist', lHand: 'fist', face: ['angry', 0.5] },
+  sigh:    { dur: 2.4, fk: [[0, {}], [0.6, { chest: [-0.06, 0, 0], lSh: [0, 0, 0.08], rSh: [0, 0, -0.08] }], [1.5, { chest: [0.04, 0, 0], lSh: [0, 0, -0.03], rSh: [0, 0, 0.03] }], [2.4, {}]], head: [0.08, 0, 0], face: ['sigh', 1] },
+  facepalm:{ dur: 2.6, r: [[0, 'head', [0.02, 0.06, 0.14]]], rPole: [0.6, -1, 0], rTwist: -1.0, head: [0.16, 0, 0.04], face: ['sad', 0.4] },
+  please:  { dur: 2.6, r: [[0, 'sh', [0.07, -0.1, 0.3]]], l: [[0, 'sh', [0.07, -0.1, 0.3]]], rTwist: -1.45, lTwist: 1.45, rPole: [1, -0.8, 0], lPole: [1, -0.8, 0], rHand: 'open', lHand: 'open', head: [0.06, 0, 0.1], face: ['pout', 0.6] },
+  hug:     { dur: 2.8, r: [[0, 'sh', [0.42, -0.02, 0.32]]], l: [[0, 'sh', [0.42, -0.02, 0.32]]], rPole: [0.3, -1, -0.3], lPole: [0.3, -1, -0.3], rHand: 'open', lHand: 'open', head: [-0.05, 0, 0.06], face: ['happy', 1] },
+  me:      { dur: 2.0, r: [[0, 'sh', [-0.05, -0.13, 0.19]]], rPole: [1, -0.8, 0], rHand: 'open', rTwist: -1.0, head: [0.04, 0, 0.06], face: ['browUp', 0.6] },
+  stop:    { dur: 2.0, r: [[0, 'sh', [0.1, -0.02, 0.48]]], rPole: [1, -1, 0], rTwist: -1.5, rWrist: [0, 0, 1.2], rHand: 'open', head: [-0.04, 0, 0], face: ['browUp', 0.5] },
+  idea:    { dur: 2.0, r: [[0, 'head', [0.19, 0.06, 0.18]]], rPole: [1, -1, 0], rHand: 'point', rTwist: -1.2, head: [-0.06, 0, 0], face: ['browUp', 0.8] },
+  thumbsdown:{ dur: 2.2, r: [[0, 'sh', [0.17, -0.12, 0.25]]], rPole: [1, -1, 0], rHand: 'thumb', rTwist: 3.0, face: ['pout', 0.6], body: 'shake' },
+  okay:    { dur: 2.2, r: [[0, 'head', [0.2, -0.04, 0.18]]], rPole: [1, -1, 0], rTwist: -1.4, rHand: 'ok', face: ['happy', 0.7] },
+  count:   { dur: 3.4, r: [[0, 'sh', [0.16, 0.0, 0.32]]], rPole: [1, -1, 0], rTwist: -1.4, rHand: [[0, 'one'], [1.0, 'two'], [2.0, 'three']], head: [0, -0.05, 0] },
+  behind:  { dur: 4.0, r: [[0, 'hips', [0.06, 0.08, -0.16]]], l: [[0, 'hips', [0.06, 0.08, -0.16]]], rPole: [1, -0.3, -1], lPole: [1, -0.3, -1], head: [0.03, 0, 0.08], spine: [-0.03, 0] },
+  adjust:  { dur: 2.4, r: [[0, 'hips', [0.18, 0.12, 0.06]], [1.2, 'hips', [0.18, 0.0, 0.06]]], l: [[0, 'hips', [0.18, 0.12, 0.06]], [1.2, 'hips', [0.18, 0.0, 0.06]]], rPole: [1, -0.4, -0.5], lPole: [1, -0.4, -0.5], rHand: 'pinch', lHand: 'pinch', head: [0.12, 0, 0] },
+  laughbig:{ dur: 2.6, fk: [[0, {}], [0.5, { spine: [-0.12, 0, 0], chest: [-0.06, 0, 0] }], [2.0, { spine: [-0.08, 0, 0], chest: [-0.04, 0, 0] }], [2.6, {}]], oscFk: ['chest', 0, 0.04, 16], head: [-0.16, 0, 0.05], face: ['happy', 1] },
+  bow:     { dur: 2.8, fk: [[0, {}], [0.8, { spine: [0.35, 0, 0], chest: [0.15, 0, 0] }], [1.8, { spine: [0.35, 0, 0], chest: [0.15, 0, 0] }], [2.8, {}]], head: [0.2, 0, 0], r: [[0, 'hips', [0.02, -0.02, 0.16]]], l: [[0, 'hips', [0.02, -0.02, 0.16]]], rPole: [1, -0.5, 0], lPole: [1, -0.5, 0] },
+  spin:    { dur: 3.2, root: [[0, [0, 0]], [3.2, [6.2832, 0]]], step: 1, face: ['happy', 0.8] },
+  jump:    { dur: 1.6, root: [[0, [0, 0]], [0.25, [0, -0.06]], [0.55, [0, 0.12]], [0.85, [0, -0.04]], [1.2, [0, 0]]], fk: [[0, {}], [0.25, { lUpLeg: [-0.35, 0, 0], rUpLeg: [-0.35, 0, 0], lLowLeg: [0.7, 0, 0], rLowLeg: [0.7, 0, 0] }], [0.55, {}], [0.85, { lUpLeg: [-0.25, 0, 0], rUpLeg: [-0.25, 0, 0], lLowLeg: [0.5, 0, 0], rLowLeg: [0.5, 0, 0] }], [1.2, {}]],
+             r: [[0, 'head', [0.22, 0.25, 0.08]]], l: [[0, 'head', [0.22, 0.25, 0.08]]], rPole: [1, 0, 0], lPole: [1, 0, 0], rHand: 'fist', lHand: 'fist', face: ['happy', 1] },
+  crouch:  { dur: 3.4, ground: 1, root: [[0, [0, 0]], [0.8, [0, -0.38]], [2.6, [0, -0.38]], [3.4, [0, 0]]], fk: [[0, {}], [0.8, { lUpLeg: [-1.25, 0, -0.12], rUpLeg: [-1.25, 0, 0.12], lLowLeg: [2.2, 0, 0], rLowLeg: [2.2, 0, 0], lFoot: [-0.6, 0, 0], rFoot: [-0.6, 0, 0], spine: [0.25, 0, 0] }], [2.6, { lUpLeg: [-1.25, 0, -0.12], rUpLeg: [-1.25, 0, 0.12], lLowLeg: [2.2, 0, 0], rLowLeg: [2.2, 0, 0], lFoot: [-0.6, 0, 0], rFoot: [-0.6, 0, 0], spine: [0.25, 0, 0] }], [3.4, {}]],
+             r: [[0, 'hips', [0.2, 0.0, 0.28]]], l: [[0, 'hips', [0.2, 0.0, 0.28]]], rPole: [1, -0.3, 0], lPole: [1, -0.3, 0] },
+  dance:   { dur: 6.0, body: 'sway', r: [[0, 'head', [0.24, 0.18, 0.1]], [1.5, 'sh', [0.2, -0.15, 0.3]], [3.0, 'head', [0.24, 0.18, 0.1]], [4.5, 'sh', [0.2, -0.15, 0.3]]], l: [[0, 'sh', [0.2, -0.15, 0.3]], [1.5, 'head', [0.24, 0.18, 0.1]], [3.0, 'sh', [0.2, -0.15, 0.3]], [4.5, 'head', [0.24, 0.18, 0.1]]], rPole: [1, -0.6, 0], lPole: [1, -0.6, 0], face: ['happy', 1] },
+  callme:  { dur: 2.6, r: [[0, 'head', [0.1, 0.0, 0.07]]], rPole: [1, -1, 0], rHand: 'pinch', head: [0, -0.06, -0.1], face: ['relaxed', 1] },
+  stretch: { dur: 3.4, r: [[0, 'head', [0.13, 0.38, 0.02]]], l: [[0, 'head', [0.13, 0.38, 0.02]]], rPole: [1, 0, 0], lPole: [1, 0, 0], head: [-0.12, 0, 0], spine: [-0.07, 0] },
+  clap:    { dur: 2.0, r: [[0, 'sh', [0.075, -0.06, 0.4]]], l: [[0, 'sh', [0.075, -0.06, 0.4]]], osc: [0, 0.05, 15], rTwist: -1.4, lTwist: 1.4, rPole: [1, -0.6, 0], lPole: [1, -0.6, 0], face: ['happy', 1] },
+  cross:   { dur: 4.5, r: [[0, 'sh', [-0.11, -0.23, 0.21]]], l: [[0, 'sh', [-0.11, -0.2, 0.18]]], rPole: [1, -0.4, 0], lPole: [1, -0.4, 0], head: [-0.03, 0, 0.05] },
+  shy:     { dur: 3.4, r: [[0, 'hips', [-0.01, 0.02, 0.17]]], l: [[0, 'hips', [-0.01, 0.0, 0.17]]], rPole: [1, -0.6, 0], lPole: [1, -0.6, 0], head: [0.16, 0.2, 0.1], spine: [0.05, 0] },
+  hello:   { dur: 2.6, r: [[0, 'head', [0.24, 0.12, 0.12]]], osc: [0, 0.05, 9], rPole: [1, -1, 0], face: ['happy', 0.8] },
+  /* ── Gestes du quotidien : accueil, émotions, communication, corps ── */
+  wave2:   { dur: 2.8, r: [[0, 'head', [0.26, 0.2, 0.1]]], l: [[0, 'head', [0.26, 0.2, 0.1]]], osc: [0, 0.06, 8], rPole: [1, -1, 0], lPole: [1, -1, 0], face: ['happy', 1] },
+  beckon:  { dur: 2.6, r: [[0, 'sh', [0.14, -0.04, 0.5]]], rPole: [1, -1, 0], rTwist: -1.3, rHand: [[0, 'open'], [0.5, 'pinch'], [0.9, 'open'], [1.4, 'pinch'], [1.8, 'open']], head: [0.03, 0, 0.1], face: ['smirk', 0.7] },
+  highfive:{ dur: 2.0, r: [[0, 'sh', [0.15, 0.22, 0.46]]], rPole: [1, -1, 0], rTwist: -1.5, rHand: 'open', face: ['happy', 1], head: [-0.03, 0, 0] },
+  handshake:{ dur: 2.8, r: [[0, 'sh', [0.06, -0.12, 0.5]]], osc: [1, 0.03, 7], rPole: [1, -1, 0], rTwist: -0.2, rHand: 'open', face: ['happy', 0.8], head: [0.05, 0, 0] },
+  salute:  { dur: 2.0, r: [[0, 'head', [0.13, 0.1, 0.1]]], rPole: [1, -0.4, 0], rTwist: -1.5, rHand: 'open', head: [-0.03, 0, 0], face: ['smirk', 0.8] },
+  thanks:  { dur: 2.8, r: [[0, 'sh', [-0.07, -0.1, 0.19]]], rPole: [1, -0.8, 0], rHand: 'open', fk: [[0, {}], [0.7, { spine: [0.16, 0, 0], chest: [0.08, 0, 0] }], [1.9, { spine: [0.16, 0, 0], chest: [0.08, 0, 0] }], [2.8, {}]], head: [0.14, 0, 0], face: ['happy', 1] },
+  gasp:    { dur: 2.2, r: [[0, 'head', [0.025, -0.095, 0.15]]], rPole: [0.4, -1, 0], rTwist: -1.2, fk: [[0, {}], [0.25, { chest: [-0.09, 0, 0], spine: [-0.05, 0, 0] }], [1.6, { chest: [-0.05, 0, 0] }], [2.2, {}]], head: [-0.07, 0, 0], face: ['surprised', 1] },
+  shock:   { dur: 2.8, r: [[0, 'head', [0.075, 0.0, 0.11]]], l: [[0, 'head', [0.075, 0.0, 0.11]]], rPole: [0.6, -1, 0], lPole: [0.6, -1, 0], rHand: 'open', lHand: 'open', fk: [[0, {}], [0.3, { chest: [-0.07, 0, 0] }], [2.0, { chest: [-0.04, 0, 0] }], [2.8, {}]], head: [-0.06, 0, 0], face: ['surprised', 1] },
+  cry:     { dur: 4.2, r: [[0, 'head', [0.04, 0.02, 0.13]]], l: [[0, 'head', [0.04, 0.02, 0.13]]], rPole: [0.5, -1, 0], lPole: [0.5, -1, 0], oscFk: ['chest', 0, 0.025, 11], fk: [[0, {}], [0.8, { spine: [0.14, 0, 0] }], [3.4, { spine: [0.14, 0, 0] }], [4.2, {}]], head: [0.18, 0, 0.05], face: ['sad', 1] },
+  wipe:    { dur: 3.0, r: [[0, 'head', [0.05, 0.03, 0.13]]], osc: [0, 0.02, 8], rPole: [0.6, -1, 0], rTwist: -1.0, head: [0.1, 0.08, 0.1], face: ['sad', 0.8] },
+  angry:   { dur: 3.2, r: [[0, 'hips', [0.19, 0.06, 0.03]]], l: [[0, 'hips', [0.19, 0.06, 0.03]]], rPole: [1, -0.2, -0.8], lPole: [1, -0.2, -0.8], rHand: 'fist', lHand: 'fist', fk: [[0, {}], [0.4, { spine: [0.08, 0, 0], chest: [0.05, 0, 0] }], [2.8, { spine: [0.08, 0, 0], chest: [0.05, 0, 0] }], [3.2, {}]], head: [0.06, 0, 0], face: ['angry', 1] },
+  sulk:    { dur: 4.4, r: [[0, 'sh', [-0.06, -0.22, 0.2]]], l: [[0, 'sh', [-0.06, -0.19, 0.17]]], rPole: [1, -0.4, 0], lPole: [1, -0.4, 0], rHand: 'relax', lHand: 'relax', head: [0.04, 0.45, 0.08], face: ['pout', 1], spine: [0.02, 0] },
+  cold:    { dur: 3.6, r: [[0, 'sh', [-0.12, -0.12, 0.17]]], l: [[0, 'sh', [-0.12, -0.09, 0.15]]], rPole: [1, -0.3, 0], lPole: [1, -0.3, 0], rHand: 'relax', lHand: 'relax', oscFk: ['chest', 2, 0.018, 13], fk: [[0, {}], [0.5, { lSh: [0, 0, 0.1], rSh: [0, 0, -0.1], spine: [0.08, 0, 0] }], [3.0, { lSh: [0, 0, 0.1], rSh: [0, 0, -0.1], spine: [0.08, 0, 0] }], [3.6, {}]], head: [0.05, 0, 0], face: ['sad', 0.4] },
+  scared:  { dur: 2.6, r: [[0, 'sh', [0.2, 0.02, 0.26]]], l: [[0, 'sh', [0.2, 0.02, 0.26]]], rPole: [1, -0.6, 0], lPole: [1, -0.6, 0], rTwist: -1.3, lTwist: 1.3, rHand: 'open', lHand: 'open', fk: [[0, {}], [0.25, { spine: [-0.1, 0, 0], chest: [-0.06, 0, 0] }], [2.0, { spine: [-0.08, 0, 0] }], [2.6, {}]], oscFk: ['chest', 2, 0.012, 14], head: [-0.06, 0, 0], face: ['surprised', 1] },
+  pose:    { dur: 4.4, r: [[0, 'hips', [0.18, 0.07, 0.0]]], l: [[0, 'hips', [0.18, 0.07, 0.0]]], rPole: [1, -0.2, -0.6], lPole: [1, -0.2, -0.6], fk: [[0, {}], [0.8, { chest: [-0.06, 0, 0], spine: [-0.04, 0, 0] }], [3.8, { chest: [-0.06, 0, 0], spine: [-0.04, 0, 0] }], [4.4, {}]], head: [-0.03, -0.1, 0.12], face: ['smirk', 0.9], body: 'shift' },
+  cheer:   { dur: 2.8, r: [[0, 'head', [0.22, 0.34, 0.04]]], l: [[0, 'head', [0.22, 0.34, 0.04]]], osc: [1, 0.05, 6], rPole: [1, 0, 0], lPole: [1, 0, 0], rHand: 'fist', lHand: 'fist', head: [-0.1, 0, 0], face: ['happy', 1] },
+  headache:{ dur: 3.4, r: [[0, 'head', [0.1, 0.065, 0.09]]], rPole: [1, -1, 0], rHand: 'open', head: [0.1, 0, 0.12], fk: [[0, {}], [0.6, { spine: [0.06, 0, 0] }], [2.8, { spine: [0.06, 0, 0] }], [3.4, {}]], face: ['sad', 0.7] },
+  scratch: { dur: 2.8, r: [[0, 'head', [0.09, 0.12, 0.0]]], osc: [0, 0.025, 9], rPole: [1, -0.6, -0.3], rHand: 'relax', head: [0.02, 0.05, 0.12], face: ['browUp', 0.7] },
+  neckrub: { dur: 3.0, r: [[0, 'head', [0.06, -0.03, -0.11]]], osc: [1, 0.015, 6], rPole: [1, 0.2, -1], head: [0.1, 0.1, 0.1], face: ['relaxed', 0.7] },
+  nails:   { dur: 3.2, r: [[0, 'head', [0.03, -0.1, 0.15]]], osc: [0, 0.012, 10], rPole: [0.4, -1, 0], rTwist: -1.2, rHand: 'pinch', head: [0.1, 0.05, 0.08], face: ['sad', 0.3] },
+  listen:  { dur: 3.0, r: [[0, 'head', [0.118, 0.025, 0.045]]], rPole: [1, -0.5, -0.3], rHand: 'open', rTwist: -1.0, head: [0.02, 0, 0.16], face: ['browUp', 0.8] },
+  whisper: { dur: 2.8, r: [[0, 'head', [0.07, -0.07, 0.125]]], rPole: [1, -0.8, 0], rTwist: -1.3, rHand: 'open', head: [0.03, -0.18, -0.05], face: ['smirk', 0.8] },
+  wait:    { dur: 2.4, r: [[0, 'sh', [0.18, -0.02, 0.44]]], rPole: [1, -1, 0], rTwist: -1.5, rWrist: [0, 0, 1.2], rHand: 'open', osc: [1, 0.02, 5], head: [-0.02, 0, 0.05], face: ['relaxed', 0.6] },
+  calm:    { dur: 3.0, r: [[0, 'sh', [0.2, -0.12, 0.4]]], l: [[0, 'sh', [0.2, -0.12, 0.4]]], osc: [1, 0.04, 3.5], rPole: [1, -1, 0], lPole: [1, -1, 0], rTwist: -2.6, lTwist: 2.6, rHand: 'open', lHand: 'open', head: [0.03, 0, 0.06], face: ['relaxed', 0.8] },
+  nope:    { dur: 2.6, r: [[0, 'sh', [0.15, 0.06, 0.44]]], osc: [0, 0.07, 7], rPole: [1, -1, 0], rHand: 'point', head: [0.02, 0, 0.1], body: 'shake', face: ['smirk', 0.8] },
+  size:    { dur: 2.8, r: [[0, 'sh', [0.12, -0.02, 0.34]], [0.9, 'sh', [0.3, 0.0, 0.3]], [1.9, 'sh', [0.3, 0.0, 0.3]]], l: [[0, 'sh', [0.12, -0.02, 0.34]], [0.9, 'sh', [0.3, 0.0, 0.3]], [1.9, 'sh', [0.3, 0.0, 0.3]]], rPole: [1, -1, 0], lPole: [1, -1, 0], rTwist: -1.5, lTwist: 1.5, rHand: 'open', lHand: 'open', face: ['browUp', 0.8] },
+  dontknow:{ dur: 2.8, r: [[0, 'sh', [0.3, -0.2, 0.2]]], l: [[0, 'sh', [0.3, -0.2, 0.2]]], rPole: [1, -1, 0], lPole: [1, -1, 0], rTwist: -1.45, lTwist: 1.45, rHand: 'open', lHand: 'open', fk: [[0, {}], [0.4, { lSh: [0, 0, 0.1], rSh: [0, 0, -0.1] }], [2.2, { lSh: [0, 0, 0.1], rSh: [0, 0, -0.1] }], [2.8, {}]], head: [0.02, 0, 0.16], face: ['sad', 0.3] },
+  overthere:{ dur: 2.8, r: [[0, 'sh', [0.5, 0.04, 0.3]]], rPole: [1, -0.4, 0], rHand: 'point', head: [0, -0.45, 0.04], spine: [0, 0], face: ['browUp', 0.5] },
+  lookhere:{ dur: 2.4, r: [[0, 'sh', [0.1, 0.3, 0.4]]], rPole: [1, -0.4, 0], rHand: 'point', head: [-0.14, 0, 0], face: ['browUp', 0.9] },
+  stomp:   { dur: 2.4, fk: [[0, {}], [0.2, { rUpLeg: [-0.5, 0, 0], rLowLeg: [0.5, 0, 0] }], [0.4, {}], [0.8, { rUpLeg: [-0.5, 0, 0], rLowLeg: [0.5, 0, 0] }], [1.0, {}], [2.4, {}]], r: [[0, 'hips', [0.19, 0.06, 0.03]]], l: [[0, 'hips', [0.19, 0.06, 0.03]]], rPole: [1, -0.2, -0.8], lPole: [1, -0.2, -0.8], rHand: 'fist', lHand: 'fist', head: [0.06, 0, 0], face: ['angry', 1] },
+  curtsy:  { dur: 3.2, ground: 1, root: [[0, [0, 0]], [0.9, [0, -0.1]], [2.0, [0, -0.1]], [3.2, [0, 0]]], fk: [[0, {}], [0.9, { spine: [0.14, 0, 0], lUpLeg: [-0.35, 0, 0], lLowLeg: [0.55, 0, 0], rUpLeg: [-0.1, 0, 0.1] }], [2.0, { spine: [0.14, 0, 0], lUpLeg: [-0.35, 0, 0], lLowLeg: [0.55, 0, 0], rUpLeg: [-0.1, 0, 0.1] }], [3.2, {}]], r: [[0, 'hips', [0.2, 0.0, 0.07]]], l: [[0, 'hips', [0.2, 0.0, 0.07]]], rPole: [1, -0.5, -0.4], lPole: [1, -0.5, -0.4], rHand: 'pinch', lHand: 'pinch', head: [0.14, 0, 0], face: ['happy', 0.9] },
+  selfie:  { dur: 3.4, r: [[0, 'sh', [0.24, 0.22, 0.42]]], rPole: [1, -0.4, 0], rHand: 'fist', head: [0.04, -0.06, 0.16], face: ['smirk', 1], body: 'shift' },
+  muscle:  { dur: 3.0, r: [[0, 'sh', [0.3, 0.1, 0.12]]], rPole: [1, 0.4, 0], rHand: 'fist', head: [-0.03, 0.1, -0.08], face: ['smirk', 1], fk: [[0, {}], [0.5, { chest: [-0.05, 0, 0] }], [2.6, { chest: [-0.05, 0, 0] }], [3.0, {}]] },
+  /* ── Mouvements anatomiques de base (flexion, extension, abduction, rotation, circumduction, pronation, élévation, bascule…) ── */
+  cerclebras:{ dur: 4.2, r: [[0, 'sh', [0.34, 0.06, 0.1]]], circ: [1, 2, 0.2, 4.4], rPole: [1, -0.4, 0], rHand: 'open', face: ['happy', 0.5] },
+  cerclebras2:{ dur: 4.2, r: [[0, 'sh', [0.34, 0.06, 0.1]]], l: [[0, 'sh', [0.34, 0.06, 0.1]]], circ: [1, 2, 0.2, 4.4], rPole: [1, -0.4, 0], lPole: [1, -0.4, 0], rHand: 'open', lHand: 'open', face: ['happy', 0.5] },
+  cerclehead:{ dur: 4.0, fk: [[0, {}], [0.5, { neck: [0.18, 0, 0], head: [0.2, 0, 0] }], [1.1, { neck: [0, 0, 0.2], head: [0, 0, 0.22] }], [1.7, { neck: [-0.12, 0, 0], head: [-0.2, 0, 0] }], [2.3, { neck: [0, 0, -0.2], head: [0, 0, -0.22] }], [2.9, { neck: [0.18, 0, 0], head: [0.2, 0, 0] }], [3.4, { neck: [0, 0, 0.2], head: [0, 0, 0.22] }], [4.0, {}]], face: ['relaxed', 0.6] },
+  rotatehead:{ dur: 3.6, fk: [[0, {}], [0.8, { neck: [0, 0.4, 0], head: [0, 0.45, 0] }], [1.8, { neck: [0, -0.4, 0], head: [0, -0.45, 0] }], [2.8, { neck: [0, 0.3, 0], head: [0, 0.3, 0] }], [3.6, {}]], face: ['relaxed', 0.4] },
+  haussepaules:{ dur: 3.2, fk: [[0, {}], [0.6, { lSh: [0, 0, 0.16], rSh: [0, 0, -0.16] }], [1.4, { lSh: [0, 0, 0.16], rSh: [0, 0, -0.16] }], [2.0, { lSh: [0, 0, -0.08], rSh: [0, 0, 0.08] }], [2.6, {}], [3.2, {}]], face: ['relaxed', 0.5] },
+  omoplates:{ dur: 3.4, fk: [[0, {}], [0.8, { lSh: [0, -0.2, 0], rSh: [0, 0.2, 0], chest: [-0.05, 0, 0] }], [1.6, { lSh: [0, -0.2, 0], rSh: [0, 0.2, 0], chest: [-0.05, 0, 0] }], [2.4, { lSh: [0, 0.2, 0], rSh: [0, -0.2, 0], chest: [0.06, 0, 0] }], [3.4, {}]], face: ['relaxed', 0.4] },
+  bassin:  { dur: 4.2, fk: [[0, {}], [0.5, { hips: [0.14, 0, 0], spine: [-0.09, 0, 0], chest: [-0.04, 0, 0] }], [1.3, { hips: [-0.14, 0, 0], spine: [0.09, 0, 0], chest: [0.04, 0, 0] }], [2.1, { hips: [0.14, 0, 0], spine: [-0.09, 0, 0], chest: [-0.04, 0, 0] }], [2.9, { hips: [-0.14, 0, 0], spine: [0.09, 0, 0], chest: [0.04, 0, 0] }], [4.2, {}]], r: [[0, 'hips', [0.175, 0.07, 0.0]]], l: [[0, 'hips', [0.175, 0.07, 0.0]]], rPole: [1, -0.2, -0.6], lPole: [1, -0.2, -0.6], face: ['smirk', 0.5] },
+  cerclehanches:{ dur: 4.6, fk: [[0, {}], [0.6, { hips: [0.1, 0, 0.1], spine: [-0.06, 0, -0.06] }], [1.2, { hips: [0, 0, 0.12], spine: [0, 0, -0.07] }], [1.8, { hips: [-0.1, 0, 0.05], spine: [0.06, 0, -0.03] }], [2.4, { hips: [-0.1, 0, -0.1], spine: [0.06, 0, 0.06] }], [3.0, { hips: [0, 0, -0.12], spine: [0, 0, 0.07] }], [3.6, { hips: [0.1, 0, -0.05], spine: [-0.06, 0, 0.03] }], [4.6, {}]], r: [[0, 'hips', [0.175, 0.07, 0.0]]], l: [[0, 'hips', [0.175, 0.07, 0.0]]], rPole: [1, -0.2, -0.6], lPole: [1, -0.2, -0.6], face: ['smirk', 0.7], body: 'sway' },
+  torsion: { dur: 4.0, fk: [[0, {}], [0.8, { spine: [0, 0.3, 0], chest: [0, 0.25, 0], head: [0, -0.2, 0] }], [2.0, { spine: [0, -0.3, 0], chest: [0, -0.25, 0], head: [0, 0.2, 0] }], [3.2, { spine: [0, 0.2, 0], chest: [0, 0.15, 0] }], [4.0, {}]], r: [[0, 'sh', [0.17, -0.05, 0.28]]], l: [[0, 'sh', [0.17, -0.05, 0.28]]], rPole: [1, -0.5, 0], lPole: [1, -0.5, 0], face: ['relaxed', 0.5] },
+  penchecote:{ dur: 4.0, fk: [[0, {}], [0.8, { spine: [0, 0, 0.18], chest: [0, 0, 0.14], head: [0, 0, -0.1] }], [2.2, { spine: [0, 0, -0.18], chest: [0, 0, -0.14], head: [0, 0, 0.1] }], [3.2, { spine: [0, 0, 0.1], chest: [0, 0, 0.07] }], [4.0, {}]], r: [[0, 'head', [0.22, 0.3, 0.0]]], l: [[0, 'head', [0.22, 0.3, 0.0]]], rPole: [1, 0, 0], lPole: [1, 0, 0], face: ['relaxed', 0.6] },
+  cambrer: { dur: 3.6, fk: [[0, {}], [0.8, { spine: [-0.1, 0, 0], chest: [-0.12, 0, 0], neck: [-0.08, 0, 0], head: [-0.14, 0, 0] }], [2.8, { spine: [-0.1, 0, 0], chest: [-0.12, 0, 0], neck: [-0.08, 0, 0], head: [-0.14, 0, 0] }], [3.6, {}]], r: [[0, 'head', [0.2, 0.3, -0.04]]], l: [[0, 'head', [0.2, 0.3, -0.04]]], rPole: [1, 0, 0], lPole: [1, 0, 0], face: ['relaxed', 0.6] },
+  penche:  { dur: 4.0, fk: [[0, {}], [1.2, { spine: [0.7, 0, 0], chest: [0.35, 0, 0], head: [0.15, 0, 0] }], [2.8, { spine: [0.7, 0, 0], chest: [0.35, 0, 0], head: [0.15, 0, 0] }], [4.0, {}]], r: [[0, 'hips', [0.15, -0.35, 0.18]]], l: [[0, 'hips', [0.15, -0.35, 0.18]]], rPole: [1, -0.3, 0], lPole: [1, -0.3, 0], face: ['relaxed', 0.4] },
+  jambecote:{ dur: 4.0, fk: [[0, {}], [1.0, { lUpLeg: [0, 0, -0.5], rUpLeg: [0, 0, 0] , hips: [0, 0, 0.05] }], [2.8, { lUpLeg: [0, 0, -0.5], hips: [0, 0, 0.05] }], [4.0, {}]], r: [[0, 'sh', [0.4, 0.0, 0.0]]], l: [[0, 'sh', [0.4, 0.0, 0.0]]], rPole: [1, -0.2, 0], lPole: [1, -0.2, 0], face: ['relaxed', 0.4] },
+  genou:   { dur: 4.0, fk: [[0, {}], [0.9, { lUpLeg: [-1.2, 0, 0], lLowLeg: [1.3, 0, 0], lFoot: [0.3, 0, 0] }], [2.8, { lUpLeg: [-1.2, 0, 0], lLowLeg: [1.3, 0, 0], lFoot: [0.3, 0, 0] }], [4.0, {}]], r: [[0, 'sh', [0.35, -0.1, 0.12]]], l: [[0, 'sh', [0.35, -0.1, 0.12]]], rPole: [1, -0.2, 0], lPole: [1, -0.2, 0], face: ['relaxed', 0.4] },
+  pointes: { dur: 3.6, root: [[0, [0, 0]], [0.7, [0, 0.055]], [2.6, [0, 0.055]], [3.6, [0, 0]]], fk: [[0, {}], [0.7, { lFoot: [-0.75, 0, 0], rFoot: [-0.75, 0, 0] }], [2.6, { lFoot: [-0.75, 0, 0], rFoot: [-0.75, 0, 0] }], [3.6, {}]], r: [[0, 'head', [0.24, 0.3, 0.0]]], l: [[0, 'head', [0.24, 0.3, 0.0]]], rPole: [1, 0, 0], lPole: [1, 0, 0], face: ['happy', 0.5] },
+  talons:  { dur: 3.4, fk: [[0, {}], [0.6, { lFoot: [0.4, 0, 0], rFoot: [0.4, 0, 0], lToes: [0.3, 0, 0], rToes: [0.3, 0, 0] }], [2.6, { lFoot: [0.4, 0, 0], rFoot: [0.4, 0, 0], lToes: [0.3, 0, 0], rToes: [0.3, 0, 0] }], [3.4, {}]], face: ['relaxed', 0.4] },
+  cheville:{ dur: 4.4, fk: [[0, {}], [0.7, { lUpLeg: [-0.55, 0, 0], lLowLeg: [0.8, 0, 0] }], [1.0, { lUpLeg: [-0.55, 0, 0], lLowLeg: [0.8, 0, 0], lFoot: [0.4, 0, 0] }], [1.5, { lUpLeg: [-0.55, 0, 0], lLowLeg: [0.8, 0, 0], lFoot: [0, 0, 0.4] }], [2.0, { lUpLeg: [-0.55, 0, 0], lLowLeg: [0.8, 0, 0], lFoot: [-0.4, 0, 0] }], [2.5, { lUpLeg: [-0.55, 0, 0], lLowLeg: [0.8, 0, 0], lFoot: [0, 0, -0.4] }], [3.0, { lUpLeg: [-0.55, 0, 0], lLowLeg: [0.8, 0, 0], lFoot: [0.4, 0, 0] }], [3.6, { lUpLeg: [-0.55, 0, 0], lLowLeg: [0.8, 0, 0] }], [4.4, {}]], r: [[0, 'sh', [0.35, -0.1, 0.12]]], l: [[0, 'sh', [0.35, -0.1, 0.12]]], rPole: [1, -0.2, 0], lPole: [1, -0.2, 0], face: ['relaxed', 0.4] },
+  doigts:  { dur: 3.6, r: [[0, 'sh', [0.17, -0.05, 0.34]]], l: [[0, 'sh', [0.17, -0.05, 0.34]]], rPole: [1, -0.8, 0], lPole: [1, -0.8, 0], rTwist: -1.45, lTwist: 1.45, rHand: [[0, 'open'], [0.7, 'spread'], [1.4, 'fist'], [2.1, 'spread'], [2.8, 'open']], lHand: [[0, 'open'], [0.7, 'spread'], [1.4, 'fist'], [2.1, 'spread'], [2.8, 'open']], face: ['relaxed', 0.4] },
+  opposition:{ dur: 4.0, r: [[0, 'sh', [0.15, -0.05, 0.34]]], rPole: [1, -0.8, 0], rTwist: -1.45, rHand: [[0, 'open'], [0.5, 'opi'], [1.0, 'opm'], [1.5, 'opr'], [2.0, 'opl'], [2.5, 'opr'], [3.0, 'opm'], [3.5, 'opi']], face: ['browUp', 0.4] },
+  paumes:  { dur: 4.4, r: [[0, 'sh', [0.17, -0.1, 0.38]]], l: [[0, 'sh', [0.17, -0.1, 0.38]]], rPole: [1, -1, 0], lPole: [1, -1, 0], rTwist: [[0, -1.45], [1.2, -3.0], [2.8, 0.2], [4.4, -1.45]], lTwist: [[0, 1.45], [1.2, 3.0], [2.8, -0.2], [4.4, 1.45]], rHand: 'open', lHand: 'open', face: ['relaxed', 0.4] },
+  marche:  { dur: 6.0, step: 2, fk: [[0, {}], [6.0, {}]], r: [[0, 'hips', [0.2, -0.05, 0.12]], [1.5, 'hips', [0.2, -0.05, -0.05]], [3.0, 'hips', [0.2, -0.05, 0.12]], [4.5, 'hips', [0.2, -0.05, -0.05]]], l: [[0, 'hips', [0.2, -0.05, -0.05]], [1.5, 'hips', [0.2, -0.05, 0.12]], [3.0, 'hips', [0.2, -0.05, -0.05]], [4.5, 'hips', [0.2, -0.05, 0.12]]], rPole: [1, -0.4, -0.4], lPole: [1, -0.4, -0.4], head: [0, 0, 0], face: ['relaxed', 0.5] },
+  pousse:  { dur: 3.2, r: [[0, 'sh', [0.15, -0.02, 0.5]]], l: [[0, 'sh', [0.15, -0.02, 0.5]]], osc: [2, 0.05, 4], rPole: [1, -0.6, 0], lPole: [1, -0.6, 0], rTwist: -1.5, lTwist: 1.5, rWrist: [0, 0, 1.2], rHand: 'open', lHand: 'open', fk: [[0, {}], [0.5, { spine: [0.1, 0, 0] }], [2.7, { spine: [0.1, 0, 0] }], [3.2, {}]], face: ['angry', 0.4] },
+  tire:    { dur: 3.4, r: [[0, 'sh', [0.15, -0.04, 0.5]], [1.2, 'sh', [0.12, -0.14, 0.2]], [2.6, 'sh', [0.12, -0.14, 0.2]]], l: [[0, 'sh', [0.15, -0.04, 0.5]], [1.2, 'sh', [0.12, -0.14, 0.2]], [2.6, 'sh', [0.12, -0.14, 0.2]]], rPole: [1, -0.5, 0], lPole: [1, -0.5, 0], rHand: 'fist', lHand: 'fist', fk: [[0, { spine: [0.1, 0, 0] }], [1.2, { spine: [-0.08, 0, 0] }], [2.6, { spine: [-0.08, 0, 0] }], [3.4, {}]], face: ['angry', 0.3] },
+  lance:   { dur: 2.4, r: [[0, 'head', [0.2, 0.2, -0.18]], [0.7, 'head', [0.2, 0.2, -0.18]], [1.0, 'sh', [0.15, 0.04, 0.55]], [1.8, 'sh', [0.12, -0.2, 0.3]]], rPole: [1, 0.2, -0.3], rHand: [[0, 'fist'], [0.9, 'fist'], [1.0, 'open']], fk: [[0, {}], [0.7, { spine: [0, -0.28, 0], chest: [0, -0.2, 0] }], [1.1, { spine: [0, 0.3, 0], chest: [0, 0.22, 0] }], [2.4, {}]], face: ['happy', 0.6] },
+  /* gestes courts qui accompagnent la parole (joués d'eux-mêmes pendant qu'elle parle) */
+  tpresent:{ dur: 1.9, r: [[0, 'sh', [0.2, -0.2, 0.34]], [0.55, 'sh', [0.23, -0.08, 0.45]], [1.5, 'sh', [0.2, -0.2, 0.34]]], rPole: [1, -0.8, 0], rTwist: -1.0, rHand: 'open', head: [0, 0, 0.05] },
+  tpresentl:{ dur: 1.9, l: [[0, 'sh', [0.2, -0.2, 0.34]], [0.55, 'sh', [0.23, -0.08, 0.45]], [1.5, 'sh', [0.2, -0.2, 0.34]]], lPole: [1, -0.8, 0], lTwist: 1.0, lHand: 'open', head: [0, 0, -0.05] },
+  tboth:   { dur: 2.0, r: [[0, 'sh', [0.2, -0.17, 0.33]], [0.55, 'sh', [0.26, -0.05, 0.42]], [1.6, 'sh', [0.2, -0.18, 0.32]]], l: [[0, 'sh', [0.2, -0.17, 0.33]], [0.55, 'sh', [0.26, -0.05, 0.42]], [1.6, 'sh', [0.2, -0.18, 0.32]]], rPole: [1, -0.8, 0], lPole: [1, -0.8, 0], rTwist: -1.0, lTwist: 1.0, rHand: 'open', lHand: 'open' },
+  temph:   { dur: 1.7, r: [[0, 'sh', [0.15, 0.03, 0.4]], [0.35, 'sh', [0.15, -0.14, 0.43]], [0.7, 'sh', [0.15, -0.03, 0.4]], [1.0, 'sh', [0.15, -0.14, 0.43]], [1.6, 'sh', [0.17, -0.22, 0.32]]], rPole: [1, -1, 0], rTwist: -1.5, rHand: 'open', head: [0.03, 0, 0] },
+  tlist:   { dur: 2.3, r: [[0, 'sh', [0.16, -0.05, 0.34]]], rPole: [1, -1, 0], rTwist: -1.4, rHand: [[0, 'one'], [0.7, 'two'], [1.4, 'three']], head: [0, -0.04, 0] },
+  tcircle: { dur: 1.8, r: [[0, 'sh', [0.2, -0.1, 0.38]]], osc: [1, 0.04, 6], rPole: [1, -0.8, 0], rTwist: -1.1, rHand: 'open' },
+  tshrug:  { dur: 1.9, r: [[0, 'sh', [0.28, -0.2, 0.22]]], l: [[0, 'sh', [0.28, -0.2, 0.22]]], rPole: [1, -1, 0], lPole: [1, -1, 0], rTwist: -1.4, lTwist: 1.4, rHand: 'open', lHand: 'open', fk: [[0, {}], [0.35, { lSh: [0, 0, 0.09], rSh: [0, 0, -0.09] }], [1.4, { lSh: [0, 0, 0.09], rSh: [0, 0, -0.09] }], [1.9, {}]], head: [0, 0, 0.12] },
+  tone:    { dur: 1.6, r: [[0, 'sh', [0.18, -0.05, 0.4]], [0.4, 'sh', [0.18, 0.04, 0.42]], [1.2, 'sh', [0.18, -0.15, 0.34]]], rPole: [1, -1, 0], rHand: 'point', head: [0.03, 0, 0] },
+};
+/* Formes de main : repli de chaque doigt (0 = tendu, 1 = replié). Pouce : 0 = au repos le long de la main, 0.85 = dressé (pouce levé). */
+const HAND = {
+  open:  { Index: 0.05, Middle: 0.05, Ring: 0.08, Little: 0.1, Thumb: 0.1 },
+  fist:  { Index: 1, Middle: 1, Ring: 1, Little: 1, Thumb: 0 },
+  point: { Index: 0, Middle: 1, Ring: 1, Little: 1, Thumb: 0 },
+  v:     { Index: 0, Middle: 0, Ring: 1, Little: 1, Thumb: 0 },
+  thumb: { Index: 1, Middle: 1, Ring: 1, Little: 1, Thumb: 0.85 },
+  pinch: { Index: 0.55, Middle: 0.15, Ring: 0.2, Little: 0.25, Thumb: 0.55 },
+  ok:    { Index: 0.6, Middle: 0.05, Ring: 0.05, Little: 0.08, Thumb: 0.6 },
+  one:   { Index: 0, Middle: 1, Ring: 1, Little: 1, Thumb: 0 },
+  two:   { Index: 0, Middle: 0, Ring: 1, Little: 1, Thumb: 0 },
+  three: { Index: 0, Middle: 0, Ring: 0, Little: 1, Thumb: 0 },
+  relax: { Index: 0.25, Middle: 0.3, Ring: 0.35, Little: 0.4, Thumb: 0.1 },
+  spread:{ Index: 0, Middle: 0, Ring: 0, Little: 0, Thumb: 0, Spread: 1 },                 // doigts écartés (abduction)
+  opi:   { Index: 0.55, Middle: 0.05, Ring: 0.05, Little: 0.08, Thumb: 0.6 },              // opposition : le pouce touche chaque doigt
+  opm:   { Index: 0.05, Middle: 0.55, Ring: 0.05, Little: 0.08, Thumb: 0.65 },
+  opr:   { Index: 0.05, Middle: 0.05, Ring: 0.55, Little: 0.08, Thumb: 0.7 },
+  opl:   { Index: 0.05, Middle: 0.05, Ring: 0.05, Little: 0.6, Thumb: 0.75 },
+};
