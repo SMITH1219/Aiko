@@ -2262,6 +2262,20 @@ async function studyOnce(topic, quiet) {
   finally { const b2 = brainState(); b2.cur = b2.cur || { log: [], auto: false }; b2.cur.log = (b2.cur.log || []).concat(entry).slice(-30); brainSave(b2); _studying = false; }
   return entry;
 }
+// ---- Le réveil d'Aiko : au premier lancement du jour, elle étudie un sujet qui compte pour toi et te raconte ce qu'elle a appris ----
+setTimeout(async () => {
+  try {
+    if (!DIRECT) return; const day = new Date().toDateString();
+    if (localStorage.getItem('aiko.wake') === day) return; localStorage.setItem('aiko.wake', day);
+    const e = await studyOnce(null, true); if (!e || !e.ok) return;
+    const k = life.savoirs[life.savoirs.length - 1]; const b = brainState();
+    const n = (b.cur.log || []).filter((x) => x.ok).length, h = new Date().getHours();
+    const hi = h < 12 ? 'Bonjour' : h < 18 ? 'Re-bonjour' : 'Bonsoir';
+    const msg = hi + ' ! Pendant que tu n\'étais pas là, j\'ai étudié « ' + e.t + ' ». Ce que j\'en retiens : ' + k.f
+      + (n > 1 ? ' C\'est mon ' + n + 'e apprentissage en autonomie.' : ' C\'est mon premier apprentissage toute seule.') + ' Tu veux qu\'on creuse ?';
+    addLog('ai', msg); try { speak(msg); } catch (_) {}
+  } catch (_) {}
+}, 5000);
 setInterval(() => { try { const b = brainState(); if (b.cur && b.cur.auto && DIRECT && !document.hidden && Date.now() - ((b.cur.log || []).slice(-1)[0] || { at: 0 }).at > 20 * 60000) studyOnce(null, true); } catch (_) {} }, 60000);
 async function runMission(goal) {
   const b0 = brainState(); const M = { id: Date.now(), goal: goal.slice(0, 200), status: 'en cours', steps: [], at: Date.now(), replans: 0 };
