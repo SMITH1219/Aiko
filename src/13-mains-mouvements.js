@@ -201,7 +201,8 @@ async function loadClips() {
     for (const [n, c] of Object.entries(j)) {
       const q = new Int16Array(_u8(c.q)), dy = new Int16Array(_u8(c.dy));
       const f = new Float32Array(q.length); for (let i = 0; i < q.length; i++) f[i] = q[i] / 32767;
-      CLIPS[n] = clipSmooth({ fps: c.fps, n: c.n, loop: c.loop, bones: c.bones, q: f, dy: Array.from(dy, (v) => v / 10000) });
+      CLIPS[n] = clipSmooth({ fps: c.fps, n: c.n, loop: c.loop, bones: c.bones, q: f, dy: Array.from(dy, (v) => v / 10000),
+        rd: c.bones.map((b) => (/UpperLeg|LowerLeg/.test(b) ? [b.startsWith('left') ? 0.342 : -0.342, -0.9397, 0] : /Foot/.test(b) ? [0, -0.2, 0.98] : null)), fu: [null, null] });   // même squelette de capture : jambes écartées de 20° au repos (corrigé à l'affichage)
     }
   } catch (e) { console.warn('clips', e); }
 }
@@ -288,7 +289,7 @@ async function lessonPlan(label, en, k, D) {
   const steps = Array.from({ length: k }, (_, i) => i === 0 ? 'Début du mouvement : place tes pieds comme moi, genoux souples, et compte avec moi 1, 2, 3, 4.'
     : i === k - 1 ? 'Fin du mouvement : termine bien la position, garde l\'équilibre, puis relâche.' : 'Partie ' + (i + 1) + ' : regarde mes pieds puis mes hanches, et suis le rythme 1, 2, 3, 4.');
   const plan = { intro: 'On apprend « ' + label + ' ». Je te le montre en entier, puis on le décompose en ' + k + ' étapes au ralenti, et on le fait ensemble.', etapes: steps, conseils: 'Respire, reste détendue, et refais-le plusieurs fois : la fluidité vient avec la répétition.' };
-  const SM = cap.sample || ((ownOk || DIRECT) ? ownSample : null); if (!SM) return plan;
+  const SM = (cap.sample || ownOk || DIRECT || brainNet) ? brainSample : null; if (!SM) return plan;
   const prompt = 'Tu es une professeure experte (danse, sport, yoga, arts martiaux). Tu enseignes le mouvement « ' + label + ' »' + (en ? ' (description technique de la capture : ' + en + ')' : '') + ', d\'une durée de ' + D.toFixed(1) + ' s, découpé en ' + k + ' parties égales que l\'élève voit au ralenti. '
     + 'Réponds uniquement en JSON strict : {"intro": "1 à 2 phrases d\'introduction", "etapes": [exactement ' + k + ' chaînes, une par partie : position des pieds, poids du corps, hanches, bras, regard, comptes, et l\'erreur fréquente à éviter, en 2 phrases maximum], "conseils": "1 à 2 phrases"}. Français, tutoiement, ton chaleureux de prof.';
   plan.ready = (async () => { try {
@@ -379,8 +380,9 @@ async function libClip(id) {
     shard = await LIBP[pf];
   }
   const c = shard[id];
-  const q = new Int16Array(_u8(c.q)), f = new Float32Array(q.length); for (let i = 0; i < q.length; i++) f[i] = q[i] / 32767;
   const dec = (k, sc) => (c[k] ? Array.from(new Int16Array(_u8(c[k])), (v) => v / sc) : null);
+  if (c.q3) return (LIBC[id] = { fps: c.fps, n: c.n, loop: false, bones: c.bones, q: clipDecodeQ3(c.q3, c.n, c.bones.length), dy: dec('dy', 10000), dx: dec('dx', 1000), dz: dec('dz', 1000), ct: c.ct ? new Uint8Array(_u8(c.ct)) : null, rd: c.rd || null, fu: c.fu || null, d: c.d, _sm: 1 });   // mouvement préparé : déjà nettoyé et filtré à la source
+  const q = new Int16Array(_u8(c.q)), f = new Float32Array(q.length); for (let i = 0; i < q.length; i++) f[i] = q[i] / 32767;
   return (LIBC[id] = clipSmooth({ fps: c.fps, n: c.n, loop: false, bones: c.bones, q: f, dy: dec('dy', 10000), dx: dec('dx', 1000), dz: dec('dz', 1000), d: c.d }));
 }
 const LIB_ALIAS = [['twerk a quatre pattes', 'twerk4'], ['twerk quatre pattes', 'twerk4'], ['twerk au sol', 'twerk4'], ['twerk', 'twerk'], ['danse orientale', 'belly'], ['danse du ventre', 'belly'], ['orientale', 'belly'], ['shimmy', 'shimmy'], ['grand ecart facial', 'splitside'], ['ecart facial', 'splitside'], ['grand ecart', 'split'],
@@ -402,29 +404,34 @@ function libPlay(q, opt = {}) {                          // joue n'importe quel 
   }).catch((e) => console.warn('lib', e));
   return hit;
 }
-const _cq1 = new THREE.Quaternion(), _cq2 = new THREE.Quaternion();
+const _cq1 = new THREE.Quaternion(), _cq2 = new THREE.Quaternion(), _rmq = new THREE.Quaternion(), _rmv = new THREE.Vector3(), _rms = new THREE.Vector3();
 const _mir = (n) => (n.startsWith('left') ? 'right' + n.slice(4) : n.startsWith('right') ? 'left' + n.slice(5) : n);
+const _ci = [0, 0, 0, 0];
 function applyClip(g, w, b) {
   const c = g.clip, nb = c.bones.length, sp = g.speed || 1, reps = g.reps || 1;
+  if (c.ct && c._prep !== vrm) clipPrep(c);                              // appuis adaptés à son corps (une fois par mouvement)
+  else if (!c.ct && c.rd && c._rt !== vrm) clipRetarget(c);               // anciens mouvements nommés : au moins la bonne pose des jambes et des pieds
   let fr = g.t * sp * c.fps;
   if (reps > 1 && !c.loop) fr = Math.min(fr, c.n * reps - 1) % c.n;      // mode prof : le mouvement est répété
-  let i0 = Math.floor(fr), fk = fr - i0, i1 = i0 + 1;
-  if (c.loop) { i0 %= c.n; i1 %= c.n; } else { i0 = Math.min(i0, c.n - 1); i1 = Math.min(i1, c.n - 1); }
+  if (!c.loop) fr = Math.min(fr, c.n - 1);
+  const I = crIdx(c, fr, _ci), W = crWeights(fr - Math.floor(fr));        // interpolation lisse entre les images enregistrées
+  g._fr = c.loop ? fr % c.n : fr;
   const m = g.mirror ? -1 : 1;                                            // miroir : face à l'élève, gauche et droite inversées
   for (let j = 0; j < nb; j++) {
     const bone = b[CLIP_BONES[g.mirror ? _mir(c.bones[j]) : c.bones[j]]]; if (!bone) continue;
-    const a = (i0 * nb + j) * 4, d = (i1 * nb + j) * 4;
-    _cq1.set(c.q[a], m * c.q[a + 1], m * c.q[a + 2], c.q[a + 3]);
-    _cq2.set(c.q[d], m * c.q[d + 1], m * c.q[d + 2], c.q[d + 3]);
-    _cq1.slerp(_cq2, fk);
+    crQuat(c.q, nb, j, I, W, m, _cq1);
     bone.quaternion.slerp(_cq1, w);
   }
   if (b.hips) {
-    b.hips.position.y += (c.dy[i0] + (c.dy[i1] - c.dy[i0]) * fk) * body.hipsY * w;
-    if (c.dx) {                                                           // déplacement réel du corps, gardé dans le cadre (douce limite à ~1 m)
-      const R = 1.0, X = (c.dx[i0] + (c.dx[i1] - c.dx[i0]) * fk) * body.hipsY * m, Z = (c.dz[i0] + (c.dz[i1] - c.dz[i0]) * fk) * body.hipsY;
-      b.hips.position.x += R * Math.tanh(X / R) * w * (window.__rootSX ?? 1);
-      b.hips.position.z += R * Math.tanh(Z / R) * w * (window.__rootSZ ?? 1);
+    b.hips.position.y += crScalar(c.dy, I, W) * body.hipsY * w;
+    if (c.ct) { b.hips.position.x += ((body.hipsX || 0) - b.hips.position.x) * w; b.hips.position.z += ((body.hipsZ || 0) - b.hips.position.z) * w; }   // le balancement de repos (poids d'une jambe sur l'autre) ne continue pas sous le mouvement : il ferait glisser les pieds
+    if (c.dx) {                                                           // déplacement réel du corps (comme dans les jeux récents : c'est le mouvement qui fait avancer le personnage)
+      const rs = c.rs || 1, X = crScalar(c.dx, I, W) * body.hipsY * m * rs, Z = crScalar(c.dz, I, W) * body.hipsY * rs;
+      if (g._pf === undefined || fr < g._pf) { g._px = X; g._pz = Z; }      // début du mouvement ou reprise d'une répétition : pas de saut
+      const pr = b.hips.parent; pr.getWorldQuaternion(_rmq); pr.getWorldScale(_rms);
+      _rmv.set((X - g._px) * _rms.x, 0, (Z - g._pz) * _rms.z).applyQuaternion(_rmq);
+      WORLD.x += _rmv.x * w; WORLD.z += _rmv.z * w; g._px = X; g._pz = Z; g._pf = fr;
+      rig.position.x += _rmv.x * w; rig.position.z += _rmv.z * w;          // tout de suite (sinon le corps a une image de retard sur ses jambes, et les pieds glissent à chaque changement de vitesse)
     }
   }
 }
@@ -434,7 +441,7 @@ function playGesture(name) {
   name = String(name || '').trim().toLowerCase();
   { const sp = name.replace(/[-_]+/g, ' '); if (!(name in POSTURES) && !GLIB[name] && !CLIPS[name] && !GLIB_FR[name] && !GEST_FR[name] && !POSTURE_FR[name]) { const a = LIB_ALIAS.find((x) => x[0] === _nrm(sp)); if (a && typeof a[1] === 'string' && !a[1].startsWith('mv:')) name = a[1]; else if (GLIB_FR[sp] || GEST_FR[sp] || POSTURE_FR[sp] || GLIB[sp]) name = sp; } }
   if (!GLIB[name] && !name.startsWith('touch:')) { const tp = touchParse(name); if (tp) name = tp[0]; }
-  if (name.startsWith('touch:') && !GLIB[name]) { const [, z, st, h] = name.split(':'); const d = touchDef(z, st, h); if (d) GLIB[name] = d; }
+  if (name.startsWith('touch:') && !GLIB[name]) { const [, z, st, h, fo] = name.split(':'); const d = touchDef(z, st, h, fo); if (d) GLIB[name] = d; }
   name = POSTURE_FR[name] || name;
   if (name in POSTURES) {                                   // posture porteuse : elle la prend, la tient quelques secondes, puis se relève
     if (gst && gst.t < gst.dur - 0.5) gst.dur = gst.t + 0.5;            // le geste en cours se termine en douceur : jamais deux mouvements du corps entier superposés
@@ -497,7 +504,7 @@ const _ik = { s: new THREE.Vector3(), e: new THREE.Vector3(), h: new THREE.Vecto
   E: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), q: new THREE.Quaternion(), w: new THREE.Quaternion(), p: new THREE.Quaternion(), I: new THREE.Quaternion() };
 function ikRotate(bone, from, to, w) {
   _ik.q.setFromUnitVectors(from.normalize(), to.normalize());
-  if (w < 1) _ik.q.slerpQuaternions(_ik.I, _ik.q, w);
+  if (w < 1) _ik.q.copy(_ik.I.clone().slerp(_ik.q, w));                   // (avant : slerpQuaternions(I, q, w) écrivait dans q en le remettant à zéro — l'IK partielle ne faisait rien, puis tout d'un coup à w = 1)
   bone.getWorldQuaternion(_ik.w); bone.parent.getWorldQuaternion(_ik.p);
   bone.quaternion.copy(_ik.p.invert().multiply(_ik.q.multiply(_ik.w)));
   bone.updateWorldMatrix(false, true);

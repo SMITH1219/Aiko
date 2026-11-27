@@ -101,6 +101,8 @@ function makeGlbAvatar(gltf) {
   return {
     scene: root, humanoid, lookAt, isGlb: true, meta: { metaVersion: '1' },
     expressionManager: { setValue(name, w) { values[name] = w; } },
+    hasShape(n) { return !!slots[n]; }, shapeNames() { return Object.keys(slots); },
+    addShapes(names) { for (const n of names) if (slots[n]) used.add(n); },        // une expression créée (proposée puis validée) pilote aussi ses formes
     update(dt) {
       humanoid.update();
       for (const n of used) acc[n] = GLB_BASE[n] || 0;

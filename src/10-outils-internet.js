@@ -7,7 +7,7 @@ const WEB_OK = !/claude\.(ai|com)|claudeusercontent/.test(location.host);
 function webTools() { return WEB_OK ? [
   { server: 'Web', name: 'recherche', desc: 'chercher sur internet (faits, définitions, personnes, lieux, sujets d\'actualité)', ro: true, builtin: true },
   { server: 'Web', name: 'lire', desc: 'lire le texte d\'une page web précise (url)', ro: true, builtin: true } ] : []; }
-TOOLS.list = webTools();
+TOOLS.list = webTools().concat(codeTools());
 async function webJSON(u, ms) { const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms || 12000); try { const r = await fetch(u, { signal: ctl.signal }); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); } finally { clearTimeout(t); } }
 async function webSearch(q) {
   q = String(q || '').trim().slice(0, 200); if (!q) return 'Requête vide.';
@@ -28,9 +28,35 @@ async function webSearch(q) {
   }
   try { const d = await webJSON('https://api.duckduckgo.com/?q=' + e + '&format=json&no_html=1&skip_disambig=1', 8000);
     if (d && d.AbstractText) out.unshift('• ' + (d.Heading || q) + ' : ' + d.AbstractText + (d.AbstractURL ? ' (source : ' + d.AbstractURL + ')' : '')); } catch (_) {}
+  const web = await webPages(q); if (web.length) out.push('Pages web :', ...web);   // VRAIE recherche de pages (actualité, prix, sujets précis) en plus de Wikipédia
   const txt = out.length ? out.join('\n') : 'Aucun résultat trouvé pour « ' + q + ' ». Dis-le honnêtement, n\'invente pas.';
   if (INJECT_RE.test(txt)) guardLog('web', 'consignes cachées dans un résultat de recherche');
   return txt.slice(0, 6000);
+}
+/* Recherche de PAGES web : avec ta clé Jina → recherche Jina (s.jina.ai) ; sans clé → la page de résultats de DuckDuckGo, lue à travers le lecteur Jina (r.jina.ai, gratuit) */
+function ddgParse(md) {   // la même adresse revient plusieurs fois (titre, domaine, extrait — l'extrait est lui-même un lien) : on regroupe par adresse
+  const re = /\[([^\]]{2,400})\]\((https?:\/\/[^)\s]+)\)/g, order = [], by = new Map(); let m;
+  while ((m = re.exec(md))) {
+    let url = m[2]; const u = /[?&]uddg=([^&]+)/.exec(url); if (u) { try { url = decodeURIComponent(u[1]); } catch (_) {} }   // redirection DuckDuckGo → vraie adresse
+    if (/duckduckgo\.com|duck\.co/i.test(url) || /\.(png|jpe?g|gif|svg|ico|webp)(\?|$)/i.test(url)) continue;
+    const t = m[1].replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/[*_`#]/g, '').replace(/\s+/g, ' ').trim(); if (t.length < 2) continue;
+    const k = url.replace(/#.*$/, ''); if (!by.has(k)) { by.set(k, []); order.push(k); } by.get(k).push(t);
+  }
+  const dom = /^(www\.)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i;
+  return order.slice(0, 6).map((k) => { const all = by.get(k), ts = all.filter((t) => !dom.test(t)); const t = ts[0] || all[0];
+    const snip = ts.slice(1).sort((a, b) => b.length - a.length)[0] || ''; return { t: t.slice(0, 160), url: k, snip: snip.slice(0, 240) }; });
+}
+async function webPages(q) {
+  const e = encodeURIComponent(q); let key = ''; try { key = localStorage.getItem('aiko.jinakey') || ''; } catch (_) {}
+  const fmt = (r) => '• ' + r.t + (r.snip ? ' : ' + r.snip : '') + ' (source : ' + r.url + ')';
+  if (key) { try { const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 20000);
+      const r = await fetch('https://s.jina.ai/?q=' + e, { headers: { Authorization: 'Bearer ' + key, Accept: 'application/json', 'X-Respond-With': 'no-content' }, signal: ctl.signal }); clearTimeout(tm);
+      if (r.ok) { const j = await r.json(); const L = ((j && j.data) || []).slice(0, 6).map((x) => ({ t: String(x.title || x.url || '').slice(0, 160), url: x.url, snip: String(x.description || x.content || '').replace(/\s+/g, ' ').slice(0, 240) })).filter((x) => x.url);
+        if (L.length) return L.map(fmt); } } catch (_) {} }
+  try { const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 20000);
+    const r = await fetch('https://r.jina.ai/https://html.duckduckgo.com/html/?q=' + e, { signal: ctl.signal, headers: key ? { Authorization: 'Bearer ' + key } : {} }); clearTimeout(tm);
+    if (r.ok) return ddgParse(await r.text()).map(fmt); } catch (_) {}
+  return [];
 }
 async function webRead(url) {
   url = String(url || '').trim(); if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
@@ -56,7 +82,7 @@ async function toolsRefresh() {
   if (!TOOLS.mcp) return;
   try {
     const r = await TOOLS.mcp.listTools();
-    TOOLS.list = webTools();
+    TOOLS.list = webTools().concat(codeTools());
     for (const sv of (r && r.servers) || []) {
       if (sv.kind === 'artifact') continue;
       for (const t of sv.tools || []) {
@@ -77,8 +103,9 @@ function toolsPrompt() {
   return '\n\nTu as accès à Internet (Web | recherche, Web | lire) et, si branchés, à ses applications. Quand sa demande en a besoin (son agenda, ses mails, ses fichiers, ses notes Notion, ses apps Base44…), '
     + 'réponds UNIQUEMENT par une balise [outil: Serveur | nom_outil | {arguments en JSON}] et rien d\'autre ; tu recevras le résultat, puis tu lui répondras. '
     + 'Tu peux mettre avant cette balise tes balises note, tache, rappel ou souvenir. '
+    + 'Pour un calcul, un code à écrire ou à vérifier, un traitement de données : écris le code et LANCE-le dans ton bac à essai (Code | executer) avant d\'affirmer que ça marche ; si une erreur revient, corrige et relance. '
     + (TOOLS.list.some((t) => t.server === 'Google Calendar' && t.name === 'create_event') ? 'Quand tu programmes un rappel, crée aussi l\'événement correspondant dans son agenda avec Google Calendar | create_event (à l\'heure du rappel, 10 minutes, avec une notification) pour que son téléphone le prévienne même page fermée ; elle validera. ' : '')
-    + 'Un outil à la fois, 3 au maximum par demande. N\'invente jamais un résultat. Arguments marqués * obligatoires. Dates au format ISO.\nOutils :\n' + lines.join('\n');
+    + 'Un outil à la fois, 3 au maximum par demande (6 quand tu corriges du code). N\'invente jamais un résultat. Arguments marqués * obligatoires. Dates au format ISO.\nOutils :\n' + lines.join('\n');
 }
 function parseTool(txt) {
   const i = String(txt || '').indexOf('[outil:');
@@ -127,7 +154,7 @@ async function runTool(tc) {
   const def = TOOLS.list.find((t) => t.server === tc.server && t.name === tc.tool);
   if (!def) return 'Outil inconnu : ' + tc.server + ' | ' + tc.tool + '. Utilise un outil de la liste.';
   { const bad = validateToolArgs(tc, def); if (bad) { addLog('sys', '✗ ' + tc.server + ' · ' + tc.tool + ' refusé : ' + bad); return 'Appel refusé avant exécution : ' + bad + '. Corrige la balise.'; } }
-  if (def.builtin) return runWebTool(tc);
+  if (def.builtin) return def.server === 'Code' ? runCodeTool(tc) : runWebTool(tc);
   const label = tc.server + ' · ' + tc.tool;
   if (!def.ro && !(await askUser(label + ' ' + JSON.stringify(tc.input).slice(0, 160)))) return 'La personne a refusé cette action. Ne la refais pas, dis-le-lui simplement.';
   const note = addLog('sys', '↻ ' + label + '…');
@@ -160,11 +187,12 @@ async function askClaude(text, onText, photo, hidden) {
     const opts = { cache: false, onText: ({ text: t }) => onText(parseBrain(t).vis) };
     if (photo) opts.images = [photo];
     let msgs = brainMessages(photo ? text + '\n(Je te montre une photo, jointe à ce message : regarde-la et réagis naturellement.)' : text);
-    const SMP = cap.sample || ownSample;
+    const SMP = brainSample;                // Claude, avec bascule automatique vers ses moteurs internet
     let out = await SMP(msgs, opts);
-    for (let step = 0; step < 3 && (TOOLS.mcp || TOOLS.list.some((t) => t.builtin)); step++) {        // boucle outils : appel → résultat → nouvelle réponse
+    for (let step = 0, lim = 3; step < lim && (TOOLS.mcp || TOOLS.list.some((t) => t.builtin)); step++) {        // boucle outils : appel → résultat → nouvelle réponse
       const tc = parseTool(out && out.text);
       if (!tc) break;
+      if (tc.server === 'Code') lim = 6;                 // code : écrire → lancer → lire l'erreur → corriger, plusieurs essais
       const pre = parseBrain(out.text); applyLife(pre);
       for (const m of pre.mem) if (m && !memories.some((x) => x.toLowerCase() === m.toLowerCase())) memories.push(m);
       const res = await runTool(tc);
@@ -254,7 +282,10 @@ async function askClaude(text, onText, photo, hidden) {
         let text = '';
         if (/\.docx$/i.test(f.name)) text = await docxText(f);
         else if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') { showToast('PDF : copie-colle le texte, ou envoie-le en .txt / .docx'); return; }
-        else text = await f.text();
+        else if (f.size > 25e6) { showToast('Fichier trop gros (25 Mo au plus)'); return; }
+        else { const by = new Uint8Array(await f.arrayBuffer()); BAC.file = { name: f.name.slice(0, 80), bytes: by };   // gardé pour son bac à essai (analyse, rétro-ingénierie)
+          if (bacIsBinary(by)) { text = '[fichier binaire « ' + f.name.slice(0, 80) + ' », ' + by.length + ' octets : examine-le avec Code | analyser]'; if (!inp.value.trim()) inp.value = 'Analyse ce fichier'; }
+          else text = new TextDecoder().decode(by); }
         text = text.replace(/\u0000/g, '').trim();
         if (!text) { showToast('Document vide ou illisible'); return; }
         pendingDoc = { name: f.name.slice(0, 60), text: text.slice(0, 14000), cut: text.length > 14000 }; pendingPhoto = null;

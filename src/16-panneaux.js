@@ -34,6 +34,9 @@
     ['Groq (clé gratuite)', 'https://api.groq.com/openai/v1', 'llama-3.3-70b-versatile'],
     ['DeepSeek (clé)', 'https://api.deepseek.com/v1', 'deepseek-chat'],
     ['Grok / xAI (clé)', 'https://api.x.ai/v1', 'grok-3-mini'],
+    ['Pollinations (ta clé pk_)', 'https://gen.pollinations.ai/v1', 'openai-fast'],
+    ['LM Studio (sur ton ordi)', 'http://localhost:1234/v1', 'local-model'],
+    ['Ollama (sur ton ordi)', 'http://localhost:11434/v1', 'llama3.2'],
   ];
   const esc = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function stats() {
@@ -66,20 +69,33 @@
     box.innerHTML = '<b style="font-size:16px">🧠 Cerveau d\'Aiko</b><div id="b-stats">' + stats() + '</div>'
       + '<hr style="border:0;border-top:1px solid #eee;margin:14px 0"><b>Ton moteur</b><p style="margin:6px 0;font-size:12px;color:#555">Facultatif. S\'il est réglé, Lexa l\'essaie en premier ; sinon elle utilise ses moteurs gratuits. Ses limites sont celles du moteur choisi.</p><div id="pr" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>'
       + '<label>Adresse</label><input id="b-url" style="' + inp + '"><label>Modèle</label><input id="b-model" style="' + inp + '"><label>Clé (laisser vide si aucune)</label><input id="b-key" type="password" autocomplete="off" style="' + inp + '">'
+      + '<button id="b-add" type="button" style="width:100%;padding:8px;margin:-4px 0 10px;border:1px solid #d5560f;border-radius:10px;background:#fff;color:#d5560f;font-size:13px">＋ Ajouter aussi comme moteur supplémentaire</button>'
+      + '<div id="b-extra" style="font-size:12px;margin-bottom:10px"></div>'
+      + '<label>Clé Pollinations (facultative, gratuite sur enter.pollinations.ai, commence par pk_)</label><input id="b-pk" type="password" autocomplete="off" style="' + inp + '">'
+      + '<label>Clé Jina (facultative : vraie recherche web, gratuite sur jina.ai)</label><input id="b-jina" type="password" autocomplete="off" style="' + inp + '">'
       + '<label style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><input id="b-on" type="checkbox"> Penser avec ses propres moteurs (sans serveur ni Claude)</label>'
       + '<div style="display:flex;gap:8px"><button id="b-ok" type="button" style="flex:1;padding:10px;border:0;border-radius:10px;background:#d5560f;color:#fff;font-size:14px">Enregistrer</button><button id="b-x" type="button" style="padding:10px 16px;border:0;border-radius:10px;background:#18101a;color:#fff;font-size:14px">Fermer</button></div>';
     ov.appendChild(box); document.body.appendChild(ov);
     const g = (id) => box.querySelector('#' + id);
     g('b-url').value = c.url; g('b-model').value = c.model; g('b-key').value = c.key || ''; g('b-on').checked = DIRECT;
+    try { g('b-pk').value = localStorage.getItem('aiko.polkey') || ''; g('b-jina').value = localStorage.getItem('aiko.jinakey') || ''; } catch (_) {}
+    const xs = () => { try { return JSON.parse(localStorage.getItem('aiko.engines')) || []; } catch (_) { return []; } };
+    const drawExtra = () => { const L = xs(); g('b-extra').innerHTML = L.length ? '<b>Moteurs supplémentaires</b> (Lexa les essaie tous)<br>' + L.map((x, i) => esc(x.name || 'Moteur') + ' · ' + esc(x.model) + ' <button type="button" data-rm="' + i + '" style="border:0;background:none;color:#b3261e;cursor:pointer">✕</button>').join('<br>') : '';
+      g('b-extra').querySelectorAll('[data-rm]').forEach((bt) => bt.onclick = () => { const L2 = xs(); L2.splice(+bt.dataset.rm, 1); try { localStorage.setItem('aiko.engines', JSON.stringify(L2)); } catch (_) {} drawExtra(); g('b-stats').innerHTML = stats(); wireCur(); }); };
+    g('b-add').onclick = () => { const u = g('b-url').value.trim(), m = g('b-model').value.trim(); if (!u || !m) { showToast('Adresse et modèle requis'); return; }
+      const nm = (PRESETS_B.find((p) => p[1] === u) || [u.replace(/^https?:\/\//, '').split('/')[0]])[0];
+      const L = xs(); if (!L.some((x) => x.url === u && x.model === m)) L.push({ name: nm, url: u, model: m, key: g('b-key').value.trim() }); try { localStorage.setItem('aiko.engines', JSON.stringify(L)); } catch (_) {}
+      drawExtra(); g('b-stats').innerHTML = stats(); wireCur(); showToast('Moteur ajouté : Lexa l\'essaiera aussi'); };
     PRESETS_B.forEach(([n, u, m]) => { const p = document.createElement('button'); p.type = 'button'; p.textContent = n; p.style.cssText = 'padding:6px 10px;border:1px solid #d5560f;border-radius:14px;background:#fff;color:#d5560f;font-size:12px'; p.onclick = () => { g('b-url').value = u; g('b-model').value = m; }; g('pr').appendChild(p); });
     const wireCur = () => {
       g('b-auto').onchange = () => { const q = brainState(); q.cur = q.cur || { log: [], auto: false }; q.cur.auto = g('b-auto').checked; brainSave(q); };
       g('b-study').onclick = async () => { g('b-study').disabled = true; g('b-study').textContent = 'Elle étudie…'; await studyOnce(null, true); g('b-stats').innerHTML = stats(); wireCur(); };
     };
-    wireCur();
+    wireCur(); drawExtra();
     g('b-x').onclick = () => ov.remove(); ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
     g('b-ok').onclick = () => {
-      try { localStorage.setItem('aiko.direct', JSON.stringify({ url: g('b-url').value.trim(), model: g('b-model').value.trim(), key: g('b-key').value.trim() })); localStorage.setItem('aiko.directOn', g('b-on').checked ? '1' : '0'); } catch (_) {}
+      try { localStorage.setItem('aiko.direct', JSON.stringify({ url: g('b-url').value.trim(), model: g('b-model').value.trim(), key: g('b-key').value.trim() })); localStorage.setItem('aiko.directOn', g('b-on').checked ? '1' : '0');
+        localStorage.setItem('aiko.polkey', g('b-pk').value.trim()); localStorage.setItem('aiko.jinakey', g('b-jina').value.trim()); } catch (_) {}
       DIRECT = IN_APP || /\.github\.io$/.test(location.host) || g('b-on').checked; ov.remove(); setStatus(); showToast('Cerveau enregistré');
     };
   });

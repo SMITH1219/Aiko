@@ -26,7 +26,7 @@ function makePores() {                     // carte de relief des pores, répét
 const SKIN_WRAP = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
   'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );',
   `float ndlW = dot( geometryNormal, directLight.direction );
-	vec3 wrapW = vec3( 0.22, 0.12, 0.08 );            // le rouge passe plus loin sous la peau que le vert et le bleu
+	vec3 wrapW = uWrap;            // le rouge passe plus loin sous la peau que le vert et le bleu
 	vec3 irrW = clamp( ( vec3( ndlW ) + wrapW ) / ( 1.0 + wrapW ), 0.0, 1.0 ) * directLight.color;
 	reflectedLight.directDiffuse += irrW * BRDF_Lambert( material.diffuseColor );`);
 const SKIN_TONE = 0xf7e2d4;                 // teint chaud doré (multiplie la texture de peau)
@@ -35,6 +35,7 @@ const SKIN_TONE = 0xf7e2d4;                 // teint chaud doré (multiplie la t
 // déborde un peu sur les côtés (fesses et cuisses assises ou allongées, genoux, hanches).
 const HAIR_COL = { value: new THREE.Color(0.20, 0.13, 0.09) };   // cuir chevelu couvert (lu sur la texture des cheveux)
 const SKIN_AVG = { value: new THREE.Color(0.86, 0.66, 0.56) };
+const MONS = { uShB: { value: 0.004 }, UT: { value: new THREE.Vector3(0.91, 0.88, 0.87) }, VEIN: { value: 1.0 }, LIFT: { value: 0.0 }, PIG: { value: 0.0 }, PORE: { value: 0.0 }, MOT: { value: 1.7 }, uShK: { value: 0.55 }, uWrap: { value: new THREE.Vector3(0.22, 0.12, 0.08) }, LIPY: { value: 1.40 }, LIPS: { value: 0.7 }, IW: { value: 0.018 }, MO: { value: 0.8 }, MS: { value: 0.0 }, MB: { value: new THREE.Vector3(0.006, 0.0022, 0.0022) }, MW: { value: 0.0026 }, MY0: { value: -0.100 }, MY1: { value: -0.082 }, MC: { value: new THREE.Color(0.30, 0.16, 0.14) } }; window.__MONS = MONS;
 const AREO = { uNL: { value: new THREE.Vector3(9, 9, 9) }, uNR: { value: new THREE.Vector3(9, 9, 9) }, uAR: { value: 0.03 }, uAS: { value: 1.0 } };   // aréoles : centres (espace de repos), rayon, intensité   // remplacée par la moyenne réelle de sa texture
 const SQ = { uFloor: { value: 0 }, uHip: { value: new THREE.Vector2() }, uSquash: { value: 1 } };
 function squashPatch(sh) {
@@ -42,11 +43,13 @@ function squashPatch(sh) {
   sh.uniforms.uSkinAvg = SKIN_AVG;
   sh.uniforms.uHair = HAIR_COL;
   Object.assign(sh.uniforms, AREO);
-  sh.fragmentShader = 'varying float vCleft; varying float vUni; varying float vScalp; uniform vec3 uSkinAvg; uniform vec3 uHair; varying float vAreo; varying vec3 vRest; uniform vec3 uNL; uniform vec3 uNR; uniform float uAR; uniform float uAS;\n' + sh.fragmentShader
-    .replace('#include <map_fragment>', '#include <map_fragment>\n  if (vAreo > 0.5) { vec3 D1 = vRest - uNL, D2 = vRest - uNR; vec3 D = dot(D1, D1) < dot(D2, D2) ? D1 : D2; float d = length(D); float ang = atan(D.y, D.x); float h1 = fract(sin(floor(ang * 2.2) * 91.7) * 4375.85), h2 = fract(sin(floor(ang * 2.2 + 1.0) * 91.7) * 4375.85); float edge = mix(h1, h2, smoothstep(0.0, 1.0, fract(ang * 2.2))); float R = uAR * (0.86 + 0.1 * edge); float a = (1.0 - smoothstep(R * 0.74, R * 1.02, d)) * uAS; vec3 g = floor(vRest * 900.0); float mot = fract(sin(dot(g, vec3(12.9898, 78.233, 37.719))) * 43758.5453); float rad = fract(sin(floor(ang * 26.0) * 12.989) * 4375.85); vec3 cA = uSkinAvg * vec3(0.72, 0.52, 0.46) * (0.95 + 0.07 * mot) * mix(0.9, 1.04, smoothstep(0.18, 0.85, d / uAR)) * (1.0 - 0.05 * rad * (1.0 - smoothstep(0.2, 0.6, d / uAR))); vec3 gc = floor(vRest * 190.0); float hb = fract(sin(dot(gc, vec3(7.13, 157.1, 113.3))) * 43758.5453); float ring = step(0.42, d / uAR) * (1.0 - step(0.86, d / uAR)); vec3 cc = (fract(vRest * 190.0) - 0.5); float bump = ring * step(0.9, hb) * (1.0 - smoothstep(0.12, 0.3, length(cc))); cA *= 1.0 + 0.14 * bump; float nr = uAR * 0.17; float nz = 1.0 - smoothstep(nr * 0.7, nr * 1.1, d); vec3 cN = uSkinAvg * vec3(0.58, 0.36, 0.33) * (1.0 + 0.12 * (1.0 - smoothstep(0.0, nr * 0.5, d))); diffuseColor.rgb = mix(diffuseColor.rgb, mix(cA, cN, nz), max(a, nz * uAS)); }\n  diffuseColor.rgb = mix(diffuseColor.rgb, uHair * (0.8 + 0.4 * fract(sin(dot(floor(vViewPosition.xy * 900.0), vec2(12.9898, 78.233))) * 43758.5453)), clamp(vScalp, 0.0, 1.0));\n  diffuseColor.rgb = mix(diffuseColor.rgb, uSkinAvg * (0.97 + 0.06 * dot(diffuseColor.rgb, vec3(0.333))), clamp(vUni, 0.0, 1.0) * 0.9);\n  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.68, 0.57, 0.53), clamp(vCleft, 0.0, 1.0));')
-    .replace('mapN.xy *= normalScale;', 'mapN.xy *= normalScale * (1.0 - 0.75 * clamp(vUni, 0.0, 1.0));');
-  sh.vertexShader = 'uniform float uFloor; uniform vec2 uHip; uniform float uSquash;\nattribute float aAreo; varying float vAreo; varying vec3 vRest; attribute float aCleft; varying float vCleft; attribute float aUni; varying float vUni; attribute float aScalp; varying float vScalp;\n' + sh.vertexShader.replace('#include <skinning_vertex>', `#include <skinning_vertex>
-  vCleft = aCleft; vUni = aUni; vScalp = aScalp; vAreo = aAreo; vRest = position;
+  Object.assign(sh.uniforms, MONS);
+  sh.fragmentShader = 'varying float vCleft; varying float vUni; varying float vScalp; uniform vec3 uSkinAvg; uniform vec3 uHair; varying float vAreo; varying vec3 vRest; varying vec3 vMons; uniform vec3 uWrap; uniform float uShB; uniform float PORE; uniform vec3 UT; uniform float VEIN; uniform float LIFT; uniform float PIG; uniform float MOT; uniform float uShK; uniform float LIPY; uniform float LIPS; uniform float MW; uniform float IW; uniform float MO; uniform float MS; uniform vec3 MB; uniform float MY0; uniform float MY1; uniform vec3 MC; uniform vec3 uNL; uniform vec3 uNR; uniform float uAR; uniform float uAS;\n' + sh.fragmentShader
+    .replace('#include <map_fragment>', '#include <map_fragment>\n  if (vRest.y > LIPY && abs(vRest.x) < 0.11) { float rd = smoothstep(0.16, 0.38, diffuseColor.r - max(diffuseColor.g, diffuseColor.b)); diffuseColor.rgb = mix(diffuseColor.rgb, uSkinAvg * vec3(0.92, 0.60, 0.60), rd * LIPS); }\n  if (vAreo > 0.5) { vec3 D1 = vRest - uNL, D2 = vRest - uNR; vec3 D = dot(D1, D1) < dot(D2, D2) ? D1 : D2; float d = length(D); float ang = atan(D.y, D.x); float h1 = fract(sin(floor(ang * 2.2) * 91.7) * 4375.85), h2 = fract(sin(floor(ang * 2.2 + 1.0) * 91.7) * 4375.85); float edge = mix(h1, h2, smoothstep(0.0, 1.0, fract(ang * 2.2))); float R = uAR * (0.86 + 0.1 * edge); float a = (1.0 - smoothstep(R * 0.74, R * 1.02, d)) * uAS; vec3 g = floor(vRest * 900.0); float mot = fract(sin(dot(g, vec3(12.9898, 78.233, 37.719))) * 43758.5453); float rad = fract(sin(floor(ang * 26.0) * 12.989) * 4375.85); vec3 cA = uSkinAvg * vec3(0.72, 0.52, 0.46) * (0.95 + 0.07 * mot) * mix(0.9, 1.04, smoothstep(0.18, 0.85, d / uAR)) * (1.0 - 0.05 * rad * (1.0 - smoothstep(0.2, 0.6, d / uAR))); vec3 gc = floor(vRest * 190.0); float hb = fract(sin(dot(gc, vec3(7.13, 157.1, 113.3))) * 43758.5453); float ring = step(0.42, d / uAR) * (1.0 - step(0.86, d / uAR)); vec3 cc = (fract(vRest * 190.0) - 0.5); float bump = ring * step(0.9, hb) * (1.0 - smoothstep(0.12, 0.3, length(cc))); cA *= 1.0 + 0.14 * bump; float nr = uAR * 0.17; float nz = 1.0 - smoothstep(nr * 0.7, nr * 1.1, d); vec3 cN = uSkinAvg * vec3(0.58, 0.36, 0.33) * (1.0 + 0.12 * (1.0 - smoothstep(0.0, nr * 0.5, d))); diffuseColor.rgb = mix(diffuseColor.rgb, mix(cA, cN, nz), max(a, nz * uAS)); }\n  diffuseColor.rgb = mix(diffuseColor.rgb, uHair * (0.8 + 0.4 * fract(sin(dot(floor(vViewPosition.xy * 900.0), vec2(12.9898, 78.233))) * 43758.5453)), clamp(vScalp, 0.0, 1.0));\n  diffuseColor.rgb = mix(diffuseColor.rgb, uSkinAvg * UT * (0.97 + 0.06 * dot(diffuseColor.rgb, vec3(0.333))), clamp(vUni, 0.0, 1.0) * 0.9);\n  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.68, 0.57, 0.53), clamp(vCleft, 0.0, 1.0));\n  if (vMons.z > 0.3) { float pig = (1.0 - smoothstep(0.003, 0.024, abs(vMons.x))) * (1.0 - smoothstep(-0.108, -0.066, vMons.y)) * smoothstep(0.3, 0.5, vMons.z); diffuseColor.rgb *= mix(vec3(1.0), vec3(0.80, 0.68, 0.64), pig * PIG); }\n  { float dB = min(distance(vRest, uNL), distance(vRest, uNR)); float wz = (1.0 - smoothstep(0.07, 0.13, dB)) * smoothstep(uAR * 1.05, uAR * 1.5, dB); if (wz > 0.0) { vec3 q = vRest * 55.0; float ln = abs(sin(q.x * 1.1 + 1.7 * sin(q.y * 0.9 + q.z * 0.6)) * sin(q.y * 0.7 + 1.3 * sin(q.x * 0.8))); float vn = (1.0 - smoothstep(0.0, 0.07, ln)); diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.86, 0.93, 0.98), vn * wz * VEIN); } }\n  { vec3 pm = vRest * 38.0; float m1 = sin(pm.x * 1.3 + sin(pm.y * 1.7 + pm.z)) * sin(pm.y * 1.1 + sin(pm.z * 1.9 + pm.x)) * sin(pm.z * 1.5 + sin(pm.x * 1.3)); vec3 pg = floor(vRest * 1400.0); float m2 = fract(sin(dot(pg, vec3(12.9898, 78.233, 37.719))) * 43758.5453) - 0.5; diffuseColor.rgb *= vec3(1.0 + 0.045 * m1 * MOT, 1.0 - 0.012 * m1 * MOT, 1.0 - 0.02 * m1 * MOT) * (1.0 + 0.035 * m2 * MOT); }\n  if (vMons.z > 0.8) { float ax = abs(vMons.x); float up = 1.0 - smoothstep(MY0, MY1, vMons.y); float core = (1.0 - smoothstep(MW * 0.2, MW, ax)) * up; float halo = (1.0 - smoothstep(0.0, MW * 4.0, ax)) * (1.0 - smoothstep(MY0 - 0.004, MY1 + 0.012, vMons.y)); diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.80, 0.68, 0.65), halo * 0.5 * MO); diffuseColor.rgb = mix(diffuseColor.rgb, MC, core * 0.55 * MO); }')
+    .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n  if (vMons.z > 0.3) { float ax = abs(vMons.x), gz = smoothstep(0.3, 0.58, vMons.z) * smoothstep(-0.124, -0.110, vMons.y); const float MZ = 1.0; vec2 q = vec2(ax, vMons.y), A = vec2(0.016, -0.104), B = vec2(0.135, 0.005), ab = B - A; float t = clamp(dot(q - A, ab) / dot(ab, ab), 0.0, 1.0); float dI = length(q - (A + ab * t)); float h = MB.x * exp(-(pow(ax * 1.1, 2.0) + pow(vMons.y + 0.074, 2.0)) / (0.028 * 0.028)) - MB.y * exp(-pow(dI / IW, 2.0)) * smoothstep(0.0, 0.15, t) * (1.0 - smoothstep(0.7, 1.0, t)) - MS * exp(-pow((vMons.y + 0.040 + 2.6 * ax * ax) / 0.009, 2.0)) * (1.0 - smoothstep(0.05, 0.10, ax)) - MB.z * exp(-pow(ax / (MW * 1.3), 2.0)) * (1.0 - smoothstep(MY0, MY1, vMons.y))  * MZ; vec3 sx = dFdx(-vViewPosition), sy = dFdy(-vViewPosition); vec3 R1 = cross(sy, normal), R2 = cross(normal, sx); float det = dot(sx, R1); vec3 ng = normalize(cross(sx, sy)); float face = smoothstep(0.18, 0.5, abs(dot(normal, normalize(vViewPosition)))) * smoothstep(0.25, 0.6, abs(dot(ng, normalize(vViewPosition)))) * smoothstep(0.55, 0.85, abs(dot(ng, normal))); vec3 g = sign(det) * (dFdx(h) * R1 + dFdy(h) * R2); float gl = length(g), gm = abs(det) * 0.9; if (gl > gm) g *= gm / gl; normal = normalize(abs(det) * normal - g * face * gz); normal = normalize(mix(normal, normalize(vViewPosition), LIFT * smoothstep(0.3, 0.58, vMons.z))); }')
+    .replace('mapN.xy *= normalScale;', 'mapN.xy *= normalScale * (1.0 - PORE * clamp(vUni, 0.0, 1.0));');
+  sh.vertexShader = 'uniform float uFloor; uniform vec2 uHip; uniform float uSquash;\nattribute float aAreo; varying float vAreo; varying vec3 vRest; attribute vec3 aMons; varying vec3 vMons; attribute float aCleft; varying float vCleft; attribute float aUni; varying float vUni; attribute float aScalp; varying float vScalp;\n' + sh.vertexShader.replace('#include <skinning_vertex>', `#include <skinning_vertex>
+  vCleft = aCleft; vUni = aUni; vScalp = aScalp; vAreo = aAreo; vRest = position; vMons = aMons;
   {
     vec4 wp = modelMatrix * vec4(transformed, 1.0);
     if (uSquash > 0.5 && wp.y < uFloor + 0.012) {
@@ -175,6 +178,7 @@ function monsSetup() {
   try {
     let m = null; vrm.scene.traverse((o) => { if (o.isSkinnedMesh && o.name === 'Body_corps') m = o; });
     if (!m || m.userData.monsDone || !bones.hips || !bones.lToes) return; m.userData.monsDone = 1;
+    { let sc = false; vrm.scene.traverse((o) => { if (o.userData && o.userData.sculptV) sc = true; }); if (sc) { window.__sculptV = 1; window.__mons = 0; window.__monsN = 0; MONS.MB.value.set(0, 0, 0); MONS.MO.value = 0; MONS.PIG.value = window.__pig ?? 0.7; MONS.LIFT.value = window.__lift ?? 0.25; } }   // corps déjà sculpté en volume (Blender) : aucune retouche ici
     const H = bones.hips.getWorldPosition(new THREE.Vector3()), f = bones.lToes.getWorldPosition(new THREE.Vector3()).sub(bones.lFoot.getWorldPosition(new THREE.Vector3()));
     f.y = 0; f.normalize(); const side = new THREE.Vector3(0, 1, 0).cross(f).normalize();
     const T = [[-0.03, 0], [-0.05, 0.003], [-0.065, 0.008], [-0.075, 0.012], [-0.085, 0.015], [-0.095, 0.013], [-0.105, 0.012], [-0.115, 0.009], [-0.121, 0.004], [-0.128, 0]];
@@ -203,10 +207,23 @@ function monsSetup() {
       const d = dl(V.y) * (1 - sm(0.045, 0.1, lat)) * G - up; if (d === 0) continue;
       P.setXYZ(i, P.getX(i) - N.x * d * k, P.getY(i) - N.y * d * k, P.getZ(i) - N.z * d * k);
     }
+    { const M = new Float32Array(P.count * 3); let off = 0, n = 0; const L = [];
+      for (let i = 0; i < P.count; i++) { m.getVertexPosition(i, V); V.applyMatrix4(m.matrixWorld); V.sub(H); L.push([V.dot(side), V.y, V.dot(f)]); if (Math.abs(L[i][0]) < 0.02 && L[i][1] < -0.1 && L[i][1] > -0.15 && L[i][2] > 0.03) { off += L[i][0]; n++; } }
+      off = n ? off / n : 0; let g = 0;
+      for (let i = 0; i < P.count; i++) { const [la, y, fz] = L[i]; M[3 * i] = la - off; M[3 * i + 1] = y; { const al = Math.abs(la - off), gw = (1 - sm(0.12, 0.19, al)) * sm(-0.26, -0.15, y) * (1 - sm(0.0, 0.06, y)) * sm(-0.02, 0.03, fz);   // zone en fondu continu (plus de ligne nette à sa limite)
+          M[3 * i + 2] = (!window.__sculptV && al < 0.04 && y < -0.05 && y > -0.128 && fz > 0.02) ? 1 : 0.3 + 0.3 * gw; } g += M[3 * i + 2]; }
+      m.geometry.setAttribute('aMons', new THREE.BufferAttribute(M, 3)); window.__monsDbg = { off, g }; }
     P.needsUpdate = true; NA.needsUpdate = true;
     const IT = window.__monsS ?? 0; if (IT > 0) { resculptSmooth(m, WR, IT, 0.5); resculptNormals(m, WR); }
     else if (REAL > 0) { for (let i = 0; i < WR.length; i++) WR[i] *= REAL; resculptNormals(m, WR); }
   } catch (e) { console.warn('pubis', e); }
+}
+// Sourcils et cils : brun foncé accordé aux cheveux (le noir pur faisait des pointillés durs), bords adoucis
+function browSetup() {
+  try { vrm.scene.traverse((o) => { if (!o.isMesh || !o.material || o.userData.browDone) return;
+    const eb = /eyebrow/i.test(o.name), el = /eyelash/i.test(o.name); if (!eb && !el) return; o.userData.browDone = 1;
+    o.material = o.material.clone(); o.material.color.copy(HAIR_COL.value).multiplyScalar(eb ? 0.55 : 0.3); o.material.roughness = 0.9; o.material.metalness = 0;
+    o.material.transparent = true; o.material.opacity = eb ? 0.82 : 0.9; o.material.alphaToCoverage = true; o.material.depthWrite = !eb; o.material.needsUpdate = true; }); } catch (e) { console.warn('sourcils', e); }
 }
 function cleftSetup() {
   try {
@@ -229,7 +246,9 @@ function cleftSetup() {
     for (let i = 0; i < P.count; i++) {
       m.getVertexPosition(i, V); V.applyMatrix4(m.matrixWorld).sub(H);
       const lat = Math.abs(V.dot(side)), y = V.y;
-      U[i] = (1 - sm(0.13, 0.2, lat)) * sm(-0.36, -0.26, y) * (1 - sm(0.06, 0.16, y));
+      { const F = window.__uniF ?? 0;   // fondu élargi : plus de rectangle clair visible sur la hanche
+        U[i] = F ? (1 - sm(0.10, 0.32, lat)) * sm(-0.44, -0.24, y) * (1 - sm(0.02, 0.24, y)) : (1 - sm(0.13, 0.2, lat)) * sm(-0.36, -0.26, y) * (1 - sm(0.06, 0.16, y)); }
+      { const bk = -V.dot(f), ub = (1 - sm(0.20, 0.30, lat)) * sm(-0.40, -0.28, y) * (1 - sm(0.06, 0.16, y)) * sm(0.0, 0.06, bk) * (window.__uniB ?? 1); if (ub > U[i]) U[i] = ub; }   // fesses : teinte continue jusque sous le pli (plus de plaques rouges de la texture d'origine)
     }
     m.geometry.setAttribute('aUni', new THREE.BufferAttribute(U, 1));
     try {   // moyenne de la peau sur sa texture (zone sûre : pixels clairs uniquement)
@@ -253,13 +272,18 @@ function skinUpgrade() {
     if (made.has(old)) { o.material = made.get(old); return; }
     const m = new THREE.MeshPhysicalMaterial({
       name: 'Peau', map: old.map, color: old.color.clone().multiply(new THREE.Color(SKIN_TONE)), roughness: window.__rough ?? 0.56, metalness: 0,
-      normalMap: poreTex, normalScale: new THREE.Vector2(0.18, 0.18),
+      normalMap: poreTex, normalScale: new THREE.Vector2(window.__pore ?? 0.27, window.__pore ?? 0.27),
       sheen: window.__sheen ?? 0.3, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xffc2a8), specularIntensity: window.__spec ?? 0.55,
       clearcoat: window.__cc ?? 0.04, clearcoatRoughness: 0.55,                 // peau mate et satinée, pas plastique
       envMapIntensity: 0.75, side: old.side,
     });
     m.userData.skin = true;
-    m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <lights_physical_pars_fragment>', SKIN_WRAP); squashPatch(sh); };
+    m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <lights_physical_pars_fragment>', SKIN_WRAP);
+      // Ombres portées sur la peau : adoucies (la peau diffuse la lumière, une ombre n'y est jamais noire ni découpée)
+      { const lf = THREE.ShaderChunk.lights_fragment_begin, re = /getShadow\( directionalShadowMap\[ i \][^;]*?vDirectionalShadowCoord\[ i \] \)/;
+        if (re.test(lf)) { sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_begin>', lf.replace(re, (x) => { const tap = (ox, oy) => x.replace('vDirectionalShadowCoord[ i ] )', '( vDirectionalShadowCoord[ i ] + vec4( ' + ox + ' * uShB, ' + oy + ' * uShB, 0.0, 0.0 ) ) )');   // 5 lectures décalées : bord d'ombre fondu au lieu de crénelé
+          return 'mix( 1.0, ( ' + x + ' + ' + tap('1.0', '0.6') + ' + ' + tap('-0.6', '1.0') + ' + ' + tap('-1.0', '-0.6') + ' + ' + tap('0.6', '-1.0') + ' ) * 0.2, uShK * ( 1.0 - smoothstep( 0.3, 0.58, vMons.z ) ) )'; })); window.__shK = 1; } }
+      squashPatch(sh); };
     m.customProgramCacheKey = () => 'aiko-skin-sq';
     made.set(old, m); o.material = m;
   });
@@ -384,14 +408,14 @@ function onLoaded(gltf, label, isDemo) {
     }
   });
   if (vrm.lookAt) vrm.lookAt.target = lookAtTarget;
-  rig.position.set(0, 0, 0);
+  rig.position.set(0, 0, 0); WORLD.x = WORLD.z = 0;
   rig.rotation.set(0, 0, 0);
   rig.add(vrm.scene);
 
   // Os mis en cache une fois (plus de recherche à chaque image)
   const bn = (n) => { try { return vrm.humanoid ? vrm.humanoid.getNormalizedBoneNode(n) : null; } catch (_) { return null; } };
   bones = {
-    hips: bn('hips'), spine: bn('spine'), chest: bn('chest'), neck: bn('neck'), head: bn('head'), lSh: bn('leftShoulder'), rSh: bn('rightShoulder'),
+    hips: bn('hips'), spine: bn('spine'), chest: bn('chest'), uChest: bn('upperChest'), neck: bn('neck'), head: bn('head'), lSh: bn('leftShoulder'), rSh: bn('rightShoulder'),
     lArm: bn('leftUpperArm'), rArm: bn('rightUpperArm'), lLowArm: bn('leftLowerArm'), rLowArm: bn('rightLowerArm'), lHand: bn('leftHand'), rHand: bn('rightHand'),
     lFoot: bn('leftFoot'), rFoot: bn('rightFoot'), lToes: bn('leftToes'), rToes: bn('rightToes'),
     lUpLeg: bn('leftUpperLeg'), rUpLeg: bn('rightUpperLeg'), lLowLeg: bn('leftLowerLeg'), rLowLeg: bn('rightLowerLeg'),
@@ -404,7 +428,7 @@ function onLoaded(gltf, label, isDemo) {
     });
   }
   jigSetup(vrm.scene);
-  try { skinSetup(vrm.scene); } catch (e) { console.warn('contact', e); }
+  try { skinSetup(vrm.scene); surfSetup(); } catch (e) { console.warn('contact', e); }
   // Doigts individuels (pour les formes de main : index pointé, pouce levé, V, poing…)
   bones.hand = { r: {}, l: {} };
   for (const [side, k] of [['right', 'r'], ['left', 'l']]) {
@@ -418,7 +442,9 @@ function onLoaded(gltf, label, isDemo) {
   const pU = wp('leftUpperLeg'), pL = wp('leftLowerLeg'), pF = wp('leftFoot'), pH = wp('head');
   if (pU && pL && pF) { body.upper = pU.distanceTo(pL); body.lower = pL.distanceTo(pF); body.foot = Math.max(0.02, pF.y); }
   if (pH) body.height = pH.y + 0.16;
-  body.hipsY = bones.hips ? bones.hips.position.y : 0;
+  body.hipsY = bones.hips ? bones.hips.position.y : 0; body.hipsX = bones.hips ? bones.hips.position.x : 0; body.hipsZ = bones.hips ? bones.hips.position.z : 0;
+  { const te = (n, t) => { const e = vrm.scene.getObjectByName(n), p = wp(t); return e && p ? e.getWorldPosition(new THREE.Vector3()).sub(p) : null; };
+    const L = te('LeftToe_End', 'leftToes'), R = te('RightToe_End', 'rightToes'); body.toeEnd = L && R ? { L, R } : null; }   // bout des orteils, par rapport à leur base
   body.anchL = wp('leftFoot'); body.anchR = wp('rightFoot');   // position des pieds au sol, au repos : cibles pour l'IK jambes (postures porteuses)
   body.legDir = (vrm.meta && vrm.meta.metaVersion === '0') ? 1 : -1;   // VRM 0.x regarde dans l'autre sens
   const seat = body.lower + body.foot - 0.07;
@@ -437,7 +463,7 @@ function onLoaded(gltf, label, isDemo) {
   if (wrSetup(vrm.scene)) $('#row-tint').hidden = true;
   try { correctivesSetup(); } catch (_) {}
   try { romSetup(vrm.scene); } catch (_) {}
-  monsSetup(); areolaSetup(); cleftSetup(); scalpSetup();
+  monsSetup(); areolaSetup(); cleftSetup(); scalpSetup(); browSetup();
   glassesOn = false;
   demoLock = !!isDemo;
   document.querySelectorAll('#row-outfit .chip').forEach((b) => b.classList.toggle('off', demoLock && b.dataset.outfit !== 'habillee'));

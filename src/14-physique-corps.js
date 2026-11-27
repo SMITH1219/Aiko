@@ -43,27 +43,29 @@ function handInside(P, D) {                            // la main (poignet, paum
   if (skinPush(_hc.Q.copy(P).addScaledVector(D, 0.07), 0.016, _hc.o) > 0.0005) return true;
   return skinPush(_hc.Q.copy(P).addScaledVector(D, 0.12), 0.008, _hc.o) > 0.0005;
 }
+/* La main ne s'enfonce pas dans la peau : elle est repoussée juste ce qu'il faut, perpendiculairement à la surface, et en douceur dans le temps.
+   (Avant : la main « reculait » d'un coup le long de l'avant-bras dès qu'elle frôlait le corps — jusqu'à 90 cm de saut en une image pendant une
+   simple marche, chaque fois que la main passait près de la hanche.) */
+const _hcSt = new WeakMap();
 function handContact(up, lo, hand) {
   if (!SKIN.ok || !up || !lo || !hand) return;
+  let st = _hcSt.get(hand); if (!st) { st = new THREE.Vector3(); _hcSt.set(hand, st); }
   up.getWorldPosition(_hc.S); lo.getWorldPosition(_hc.E); hand.getWorldPosition(_hc.H);
   _hc.D.copy(_hc.H).sub(_hc.E).normalize();
-  if (!handInside(_hc.H, _hc.D)) return;
-  // la main recule le long de son avant-bras jusqu'au premier contact : elle se pose SUR le corps
-  let a = 0, b = 1;
-  for (let k = 0; k < 9; k++) { const m = (a + b) / 2; _hc.P.copy(_hc.E).lerp(_hc.H, m); if (handInside(_hc.P, _hc.D)) b = m; else a = m; }
-  if (a > 0.3) _hc.T.copy(_hc.E).lerp(_hc.H, a);
-  else {                                                  // avant-bras presque entièrement dans le corps : on ressort selon la surface
-    let dmax = 0; _hc.T.copy(_hc.H);
-    for (const off of [0, 0.07, 0.12]) { const d = skinPush(_hc.Q.copy(_hc.H).addScaledVector(_hc.D, off), 0.014, _hc.o); if (d > dmax) { dmax = d; _hc.P.copy(_hc.o); } }
-    _hc.T.add(_hc.P);
-  }
-  _hc.pole.copy(_hc.E).sub(_hc.S);                     // coude dans le même sens qu'avant
+  let dmax = 0; _hc.P.set(0, 0, 0);                        // poignet, paume, doigts : on garde l'enfoncement le plus profond
+  for (const [off, mg] of [[0, 0.012], [0.07, 0.016], [0.12, 0.008]]) { const d = skinPush(_hc.Q.copy(_hc.H).addScaledVector(_hc.D, off), mg, _hc.o); if (d > dmax) { dmax = d; _hc.P.copy(_hc.o); } }
+  if (dmax > 0.12) _hc.P.multiplyScalar(0.12 / dmax);      // jamais plus de 12 cm
+  const dtk = Math.min(0.1, Math.max(0.004, _simDt)), step = 1.4 * dtk;          // la correction arrive et repart progressivement (1,4 m/s au plus)
+  _hc.T.copy(_hc.P).sub(st); const l = _hc.T.length(); if (l > step) _hc.T.multiplyScalar(step / l); st.add(_hc.T);
+  if (st.lengthSq() < 1e-7) return;
+  _hc.T.copy(_hc.H).add(st);
+  _hc.pole.copy(_hc.E).sub(_hc.S);                         // coude dans le même sens qu'avant
   armIK(up, lo, hand, _hc.T, _hc.pole, 1);
 }
 /* Repère du corps (côté droit, haut, avant) et points d'ancrage, recalculés à chaque image */
-const _bf = { X: new THREE.Vector3(), Y: new THREE.Vector3(), Z: new THREE.Vector3(), l: new THREE.Vector3(), r: new THREE.Vector3(), anc: {}, tg: new THREE.Vector3(), pl: new THREE.Vector3(), tmp: new THREE.Vector3() };
-['head', 'sh', 'hips'].forEach((k) => { _bf.anc[k] = new THREE.Vector3(); });
-_bf.hx = new THREE.Vector3(); _bf.hz = new THREE.Vector3(); _bf.up = new THREE.Vector3(); _bf.sc = new THREE.Vector3();
+const _bf = { X: new THREE.Vector3(), Y: new THREE.Vector3(), Z: new THREE.Vector3(), l: new THREE.Vector3(), r: new THREE.Vector3(), anc: {}, tg2: new THREE.Vector3(), tg: new THREE.Vector3(), pl: new THREE.Vector3(), tmp: new THREE.Vector3() };
+['head', 'sh', 'hips', 'avbL', 'poigL', 'mainL', 'chvD', 'plD', 'dosD', 'cuD', 'cdL', 'mlD'].forEach((k) => { _bf.anc[k] = new THREE.Vector3(); }); _bf.soleN = new THREE.Vector3(0, -1, 0); _bf.cuN = new THREE.Vector3(-1, 0, 0); _bf.mlN = new THREE.Vector3(0, 0, -1);
+_bf.zo = {}; _bf.hx = new THREE.Vector3(); _bf.hz = new THREE.Vector3(); _bf.up = new THREE.Vector3(); _bf.sc = new THREE.Vector3();
 const _bl1 = new THREE.Vector3(), _bl2 = new THREE.Vector3();
 function libKey(keys, t, side, osc, gt, blend) {
   let k = 0; while (k + 1 < keys.length && keys[k + 1][0] <= t) k++;
@@ -83,6 +85,7 @@ function libKey(keys, t, side, osc, gt, blend) {
     return _bf.tg.copy(_bf.anc.sh).setY(0.065).addScaledVector(_bf.hx, o[0] * side).addScaledVector(_bf.hz, o[2]).add(_bf.up.set(0, o[1], 0));
   }
   const P = _bf.anc[A[1]] || _bf.anc.sh;
+  if (A[1] === 'head' && _bf.hX) return _bf.tg.copy(P).addScaledVector(_bf.hX, o[0] * side).addScaledVector(_bf.hY, o[1]).addScaledVector(_bf.hZ, o[2]);
   return _bf.tg.copy(P).addScaledVector(_bf.X, o[0] * side).addScaledVector(_bf.Y, o[1]).addScaledVector(_bf.Z, o[2]);
 }
 function keyLerp(keys, t) {          // valeur interpolée (douce) entre images-clés [t, valeur]
@@ -141,12 +144,18 @@ function xfadeApply(b, dt) {
 }
 const _gv = new THREE.Vector3();
 const AIRBORNE = /saut|jump|leap|\bhop\b|flip|roue|cartwheel|tournant|salto|acrobat/i;   // mouvements où les pieds quittent vraiment le sol
-function groundBody(b, w) {          // le point le plus bas du corps (pieds, genoux, bassin, buste, tête) se pose exactement sur le sol
+function groundBody(b, w, upOnly, noHands, noRLeg) {   // noHands : gestes de TOUCHER — la main qui va vers le corps n'est pas un appui (vu : elle soulevait tout le corps, bassin 0,20↔0,76 m, boucle)          // le point le plus bas du corps (pieds, genoux, bassin, buste, tête) se pose exactement sur le sol
   rig.updateMatrixWorld(true);
   const fy = body.anchL ? body.anchL.y : 0.07;
-  const C = [[b.lFoot, fy], [b.rFoot, fy], [b.lToes, 0.025], [b.rToes, 0.025], [b.lLowLeg, 0.06], [b.rLowLeg, 0.06], [b.hips, 0.105], [b.chest, 0.135], [b.head, 0.105], [b.spine, 0.1]]   // rayons : volume réel du corps (fesses, poitrine) autour de l'os;
-  let m = Infinity; for (const [o, r] of C) if (o) m = Math.min(m, o.getWorldPosition(_gv).y - r);
-  if (isFinite(m)) { rig.position.y -= m * w; rig.updateMatrixWorld(true); }
+  const C = [[b.lFoot, fy], [b.rFoot, fy], [b.lToes, 0.009], [b.rToes, 0.009], [b.lLowLeg, 0.075], [b.rLowLeg, 0.075], [b.lUpLeg, 0.13], [b.rUpLeg, 0.13], [b.hips, 0.16], [b.chest, 0.135], [b.head, 0.105], [b.spine, 0.1]]   // rayons : volume réel du corps (fesses, poitrine) autour de l'os;
+  if (groundBody.v !== vrm) { groundBody.v = vrm; groundBody.te = null; }
+  if (!groundBody.te) groundBody.te = [vrm.scene.getObjectByName('LeftToe_End'), vrm.scene.getObjectByName('RightToe_End')];
+  for (const e of groundBody.te) if (e) C.push([e, 0.012]);
+  if (!noHands) for (const h of [b.lHand, b.rHand]) if (h) C.push([h, 0.035]);
+  if (noRLeg) for (let i = C.length - 1; i >= 0; i--) if (/^(Normalized_)?Right(Foot|Toe|ToeBase|Toe_End|Leg|LowerLeg)/.test(C[i][0] && C[i][0].name || '') || C[i][0] === b.rFoot || C[i][0] === b.rToes || C[i][0] === b.rLowLeg) C.splice(i, 1);   // jambe droite POSÉE ensuite par IK (demi-tailleur) : elle n'est pas un appui   // mains : en appui (roue, équilibre, pompes), elles se posent sur le sol au lieu de passer dessous   // bout des orteils : sur la pointe des pieds, il ne s'enfonce plus dans le sol
+  let m = Infinity, mo = null; for (const [o, r] of C) if (o) { const v = o.getWorldPosition(_gv).y - r; if (v < m) { m = v; mo = o.name; } }
+  if (window.__gbLog) window.__gbLog.push([mo, +m.toFixed(3), +rig.position.y.toFixed(3), b.rUpLeg.rotation.toArray().slice(0,3).map((x) => +x.toFixed(2)), +b.rLowLeg.rotation.x.toFixed(2), +b.hips.rotation.x.toFixed(2), +b.hips.position.y.toFixed(3)]);
+  if (isFinite(m) && (!upOnly || m < -0.003)) { rig.position.y -= m * w; rig.updateMatrixWorld(true); }   // upOnly : simple garde-fou (rien ne passe sous le sol), sans recoller au sol
 }
 function applyFk(def, gt, w, b) {      // corps entier : jambes, bassin, buste, et le corps qui tourne ou se baisse
   if (def.fk) {
@@ -158,6 +167,13 @@ function applyFk(def, gt, w, b) {      // corps entier : jambes, bassin, buste, 
     }
   }
   if (def.oscFk && b[def.oscFk[0]]) b[def.oscFk[0]].rotation[['x', 'y', 'z'][def.oscFk[1]]] += def.oscFk[2] * Math.sin(gt * def.oscFk[3]) * w;
+  if (def.flinch && gt > def.flinch.t) {                                     // SURSAUT : secousse amortie au moment où ça fait mal (recul du buste, tête, épaule qui remonte)
+    const u = gt - def.flinch.t, e = Math.exp(-u * 7) * Math.sin(u * 24) * def.flinch.amp * w;
+    if (b.chest) b.chest.rotation.x += -0.5 * e;
+    if (b.neck) b.neck.rotation.x += -0.35 * e;
+    if (b.head) b.head.rotation.x += 0.3 * e;
+    if (b.hips) b.hips.rotation.x += -0.12 * e;
+  }
   if (def.iso) for (const [k, ax, amp, fr, ph] of def.iso) if (b[k]) b[k].rotation[['x', 'y', 'z'][ax]] += amp * Math.sin(gt * fr + (ph || 0)) * w;   // isolations (cercles de hanches, shimmy, rebonds…)
   if (def.oscRoot) rig.position.y += def.oscRoot[0] * Math.sin(gt * def.oscRoot[1]) * w;
   if (def.root) {
@@ -288,6 +304,38 @@ function propUpdate(lib, gt, b) {
   }
   if (!held) { S.mesh.quaternion.identity(); S.mesh.position.set(tx, ty + 0.0125 + (PROPS_H[spec.n] || 0.06), tz); }
 }
+/* PRISE RÉELLE : la forme principale de chaque objet (distance signée exacte, repère local) et son demi-épaisseur dans la direction de la paume.
+   L'objet est posé CONTRE la paume affichée, puis chaque doigt et le pouce se referment jusqu'au contact de sa vraie surface (même solveur que sur la peau). */
+const _sdfBox = (p, hx, hy, hz) => { const qx = Math.abs(p.x) - hx, qy = Math.abs(p.y) - hy, qz = Math.abs(p.z) - hz; return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0); };
+const PROP_SDF = {
+  verre: (p) => Math.max(Math.hypot(p.x, p.z) - (0.0325 + (p.y / 0.12) * 0.007), Math.abs(p.y) - 0.06),
+  tasse: (p) => Math.max(Math.hypot(p.x, p.z) - (0.037 + (p.y / 0.08) * 0.006), Math.abs(p.y) - 0.04),
+  bouteille: (p) => Math.max(Math.hypot(p.x, p.z) - 0.034, Math.abs(p.y) - 0.085),
+  telephone: (p) => _sdfBox(p, 0.036, 0.075, 0.0045), livre: (p) => _sdfBox(p, 0.075, 0.105, 0.013) };
+const PROP_SHIFT = { telephone: 0.05, livre: 0.04 }, PROP_LONG = { telephone: 1 };
+const PROP_R = { verre: 0.032, tasse: 0.036, bouteille: 0.034, telephone: 0.0045, livre: 0.013 };
+function propGrasp(b, dt) {                         // passe différée (après la physique) : sur la main AFFICHÉE
+  const S = PROPS_ST; if (!S.held || !S.mesh || !PROP_SDF[S.name] || window.__noGrasp) return false;
+  const hk = S.hand, hand = hk === 'l' ? b.lHand : b.rHand; surfPropagate(b);
+  const P = new THREE.Vector3(), N = new THREE.Vector3(); if (!palmPoint(b, hk, hand, P, N)) return false;
+  const def = PROPS[S.name] || {};
+  if (def.face) {                                   // objet PLAT (téléphone, livre) : orienté PAR LA MAIN — dos contre la paume, longueur en travers de la paume (les doigts enveloppent un bord, le pouce l'autre), écran tourné vers elle
+    const fd = new THREE.Vector3(), nn = new THREE.Vector3(); rawPalmFrame(b, hk, fd, nn);
+    const tt = new THREE.Vector3().crossVectors(nn, fd).normalize(); if (tt.y < 0) tt.negate();   // en travers de la paume, vers le haut
+    const ax = (PROP_LONG[S.name] ? fd.clone() : tt.clone());   // téléphone : dans la LONGUEUR de la main (doigts à plat derrière, pouce sur le côté — la prise pour regarder l'écran) ; livre : en travers (dos dans la paume)
+    const zz = nn.clone(), yy = ax.addScaledVector(zz, -ax.dot(zz)).normalize(), xx = new THREE.Vector3().crossVectors(yy, zz);
+    S.mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xx, yy, zz));
+    S.mesh.position.copy(P).addScaledVector(nn, PROP_R[S.name] + 0.004).addScaledVector(fd, window.__propSh ?? PROP_SHIFT[S.name] ?? 0);   // décalé vers les doigts : le bord passe sous la 2e phalange, les doigts s'enroulent autour (centré : les doigts se refermaient dans le vide au-delà du bord, vu)
+    S.mesh.updateMatrixWorld(true); const inv0 = S.mesh.matrixWorld.clone().invert(), f0 = PROP_SDF[S.name], tmp0 = new THREE.Vector3();
+    fingersToSurface(b, hk, 1, dt, (p) => f0(tmp0.copy(p).applyMatrix4(inv0)));
+    return true; }
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(S.mesh.quaternion);
+  const n2 = N.clone().addScaledVector(up, -N.dot(up)); if (n2.lengthSq() < 1e-4) return false; n2.normalize();   // la paume regarde l'axe de l'objet
+  S.mesh.position.copy(P).addScaledVector(n2, PROP_R[S.name] + 0.006).addScaledVector(up, (def.lift || 0) * 0.5);
+  S.mesh.updateMatrixWorld(true); const inv = S.mesh.matrixWorld.clone().invert(), f = PROP_SDF[S.name], tmp = new THREE.Vector3();
+  fingersToSurface(b, hk, 1, dt, (p) => f(tmp.copy(p).applyMatrix4(inv)));
+  return true;
+}
 const PROPS_H = { verre: 0.06, tasse: 0.04, bouteille: 0.085, telephone: 0.005, livre: 0.013, fleur: 0.004, stylo: 0.006, miroir: 0.05 };
 /* Gestes avec objet : même format que les autres gestes (images-clés), plus `prop` : {n, h, on, off} = quand l'objet est dans la main. */
 (function () {
@@ -318,25 +366,186 @@ const PROPS_H = { verre: 0.06, tasse: 0.04, bouteille: 0.085, telephone: 0.005, 
 })();
 
 /* ================= TOUCHER : ses mains se posent sur son propre corps (n'importe quelle zone), caresse, tapote, tient ================= */
+const SOLE_K = { hips: [-0.15, 0, 0], spine: [0.6, 0, 0], chest: [0.4, 0, 0], neck: [-0.3, 0, 0], lUpLeg: [-1.55, 0, 0], lLowLeg: [0.05, 0, 0], rUpLeg: [-1.3, 0, 0.5], rLowLeg: [2.0, 0, 0] };   // assise au sol, jambe gauche devant ; la jambe droite est ensuite POSÉE par IK (def.legPlace) : cheville sur la cuisse gauche, genou vers l'extérieur
+const FOOTLOC = { r: null };
+const SEAT_KNEE = { hips: [-0.15, 0, 0], spine: [0.55, 0, 0.1], chest: [0.35, 0, 0.12], neck: [-0.25, 0, 0], lUpLeg: [-1.55, 0, -0.2], lLowLeg: [0.05, 0, 0], rUpLeg: [-2.05, 0, 0.3], rLowLeg: [2.2, 0, 0] };   // assise, genou droit relevé, pied à plat
+const SEAT_K = { hips: [-0.15, 0, 0], spine: [0.45, 0, 0.08], chest: [0.3, 0, 0.12], neck: [-0.25, 0, 0], lUpLeg: [-1.55, 0, -0.28], lLowLeg: [0.05, 0, 0], rUpLeg: [-1.55, 0, 0.28], rLowLeg: [0.05, 0, 0] };   // assise au sol, jambes devant un peu ouvertes   // axes locaux du pied (orteils, plante), mesurés une fois debout
 const ZONES = {   // [ancre, [x droite, y haut, z avant] pour la main droite, plan de la caresse [axeA, axeB], pôle du coude]
-  joue: ['head', [0.075, 0.0, 0.10], [1, 2], [0.6, -1, 0]], menton: ['head', [0.0, -0.035, 0.13], [0, 2], [0.6, -1, 0.2]], levres: ['head', [0.012, -0.105, 0.125], [0, 1], [0.5, -1, 0.1]],
-  cou: ['head', [0.05, -0.10, 0.05], [1, 2], [0.8, -1, -0.2]], nuque: ['head', [0.03, -0.1, -0.07], [0, 1], [0.8, -1, -0.5]], cheveux: ['head', [0.10, 0.09, 0.04], [1, 2], [1, 0.1, -0.2]],
-  epaule: ['sh', [0.14, 0.05, 0.05], [0, 2], [1, -1, 0.2]], poitrine: ['sh', [-0.05, -0.14, 0.15], [0, 1], [1, -0.8, 0]], ventre: ['hips', [0.03, 0.15, 0.13], [0, 1], [1, -0.6, 0]],
-  taille: ['hips', [0.18, 0.10, 0.03], [1, 2], [1, -0.2, -0.6]], hanche: ['hips', [0.175, 0.0, 0.02], [1, 2], [1, -0.2, -0.6]], fesse: ['hips', [0.10, -0.06, -0.15], [0, 1], [1, -0.3, -1]],
-  cuisse: ['hips', [0.16, -0.22, 0.10], [1, 2], [1, -0.5, 0]], genou: ['hips', [0.11, -0.47, 0.11], [0, 1], [1, -0.5, 0]], bras: ['sh', [-0.2, -0.2, 0.13], [1, 2], [1, -0.8, 0.2]],
+  joue: ['head', [0.05, 0.0, 0.055], [1, 2], [0.6, -1, 0]], menton: ['head', [0.0, -0.05, 0.10], [0, 2], [0.6, -1, 0.2]], levres: ['head', [0.0, -0.028, 0.115], [0, 1], [0.5, -1, 0.1]],
+  cou: ['head', [0.04, -0.10, 0.02], [1, 2], [0.8, -1, -0.2]], nuque: ['head', [0.02, -0.07, -0.12], [0, 1], [0.8, -1, -0.5]], cheveux: ['head', [0.055, 0.10, -0.01], [1, 2], [1, 0.1, -0.2]],
+  epaule: ['sh', [0.12, 0.03, 0.05], [0, 2], [0.6, -1, 0.4]], soussein: ['sh', [-0.10, -0.245, 0.175], [0, 2], [1, -1, 0.2], { fdir: [0.15, 0.25, 1] }],
+  poitrine: ['sh', [-0.11, -0.178, 0.275], [0, 1], [1, -0.8, 0]], ventre: ['hips', [0.03, 0.15, 0.13], [0, 1], [1, -0.6, 0]],
+  taille: ['hips', [0.15, 0.10, 0.0], [1, 2], [1, -0.2, -0.6]], hanche: ['hips', [0.175, 0.0, 0.02], [1, 2], [1, -0.2, -0.6]], fesse: ['hips', [0.10, -0.06, -0.15], [0, 1], [1, -0.3, -1], { lean: 0.4 }],
+  cuisse: ['hips', [0.22, -0.20, 0.09], [1, 2], [1, -0.5, 0], { lean: 0.9 }], cheville: ['chvD', [0.03, 0.03, -0.01], [0, 1], [1, -0.6, -0.6], { hand: 'r', grip: 1 }],
+  // pied (dessus) : Meissner + Pacini très denses, top-3 des zones chatouilleuses (gargalesis) — accroupie comme pour la cheville
+  pied: ['chvD', [0.04, -0.08, 0.03], [0, 2], [1, -0.6, -0.6], { hand: 'r', crouch: 1, tip: 1, out: [1, 0.3, 0.3] }],   // cou-de-pied externe, accroupie, BOUT DES DOIGTS : en squat profond le mollet frôle le cou-de-pied — pas la place d'une paume (vérifié : elle remontait sur le mollet) ; un humain y passe les doigts ; out = direction d'extérieur d'auteur (la règle « loin des hanches » pointerait vers le bas)
+  // plante du pied : assise au sol, pied droit ramené sur la cuisse gauche, plante tournée vers le haut — la pose que prend un humain pour masser ou chatouiller sa plante
+  plante: ['plD', [0, 0, 0], [0, 2], [1, -0.6, -0.3], { hand: 'l', sole: 1 }],
+  cuisseint: ['cuD', [0, 0, 0], [1, 2], [1, -0.6, -0.2], { hand: 'r', seat: 1 }],
+  mollet: ['mlD', [0, 0, 0], [1, 2], [1, -0.6, -0.2], { hand: 'r', seat: 'genou' }],   // assise, genou droit relevé, la main sur le mollet
+  coude: ['cdL', [0, 0.02, -0.01], [0, 1], [1, -0.8, 0.3], { hand: 'r' }],             // coude gauche, bras présenté comme pour l'avant-bras
+  dos: ['hips', [0.08, 0.24, -0.135], [0, 1], [1, -0.4, -1]],                          // milieu du dos : la main passe derrière, plus haut que les reins
+  aine: ['hips', [0.105, -0.07, 0.1], [0, 1], [1, -0.3, 0.2], { out: [0.35, -0.45, 1] }],   // pli de l'aine (entre la cuisse et le ventre, sur le côté)   // intérieur de la cuisse : assise au sol, jambes un peu ouvertes, main droite à mi-cuisse   // la plante regarde vers la GAUCHE : c'est la main gauche qui la touche, la droite tient le pied
+  // aisselle : nerf intercostobrachial, peau fine, zone chatouilleuse n°1 — la main droite croise vers l'aisselle GAUCHE, le bras gauche se lève (main derrière la tête) pour l'exposer
+  aisselle: ['sh', [-0.13, -0.045, 0.02], [1, 2], [0.6, -1, 0.3], { hand: 'r', raise: 1 }],
+  genou: ['hips', [0.11, -0.40, 0.13], [0, 1], [1, -0.5, 0], { lean: 1.8 }],
+  bras: ['sh', [-0.2, -0.2, 0.13], [1, 2], [1, -0.8, 0.2]],
+  // zones fines du visage : contact du BOUT DE L'INDEX (tip), pas de la paume
+  oeil: ['head', [0.028, 0.025, 0.105], [0, 1], [0.6, -1, 0.1], { tip: 1 }], nez: ['head', [0.0, -0.002, 0.125], [0, 1], [0.5, -1, 0.1], { tip: 1 }],
+  oreille: ['head', [0.085, 0.038, -0.001], [0, 1], [0.8, -1, -0.2], { tip: 1 }], machoire: ['head', [0.045, -0.045, 0.06], [1, 2], [0.6, -1, 0], { tip: 1 }],
+  front: ['head', [0.01, 0.075, 0.105], [0, 1], [0.6, -1, 0]], tempe: ['head', [0.055, 0.045, 0.05], [0, 1], [0.8, -1, -0.1]],
+  crane: ['head', [0.01, 0.12, 0.01], [0, 2], [1, -0.6, -0.3]],
+  reins: ['hips', [0.06, 0.13, -0.145], [0, 1], [1, -0.4, -1]],                       // bas du dos : la main passe derrière
+  // l'autre bras (ancres mobiles : la cible bouge avec le bras gauche) — toujours touché par la main droite
+  avantbras: ['avbL', [0, 0.025, 0], [0, 2], [1, -0.8, 0.3], { hand: 'r' }], poignet: ['poigL', [0, 0.025, 0], [0, 1], [1, -0.8, 0.2], { hand: 'r' }],
+  main: ['mainL', [0, 0.02, 0], [0, 2], [1, -0.8, 0.2], { hand: 'r' }],
 };
-const TOUCH_STYLES = { caresse: { shape: 'main-detendue', r: 0.022, fr: 3.2 }, tapote: { shape: 'main-detendue', r: 0.012, fr: 11 }, pose: { shape: 'main-detendue', r: 0, fr: 0 }, masse: { shape: 'asl-bent-5', r: 0.018, fr: 5 } };
-const ZONE_FR = { joue: 'joue', joues: 'joue', menton: 'menton', levres: 'levres', 'lèvres': 'levres', bouche: 'levres', cou: 'cou', nuque: 'nuque', cheveux: 'cheveux', epaule: 'epaule', 'épaule': 'epaule', epaules: 'epaule', poitrine: 'poitrine', seins: 'poitrine', ventre: 'ventre', taille: 'taille', hanche: 'hanche', hanches: 'hanche', fesse: 'fesse', fesses: 'fesse', croupe: 'fesse', cuisse: 'cuisse', cuisses: 'cuisse', genou: 'genou', bras: 'bras' };
-const TOUCH_VERB = { caresse: 'caresse', caresses: 'caresse', touche: 'pose', pose: 'pose', tapote: 'tapote', frotte: 'masse', masse: 'masse', effleure: 'caresse', serre: 'pose' };
-function touchDef(zone, style, hand) {
+const TOUCH_STYLES = { caresse: { shape: 'main-detendue', r: 0.025, fr: 1.5, force: 0.08 }, tapote: { shape: 'main-detendue', r: 0.012, fr: 11, force: 0.25 }, pose: { shape: 'main-detendue', r: 0, fr: 0, force: 0.15 }, masse: { shape: 'asl-bent-5', r: 0.018, fr: 5, force: 0.55 },
+  gratte: { shape: 'asl-bent-5', r: 0.015, fr: 13, force: 0.35 }, frotte: { shape: 'main-detendue', r: 0.02, fr: 6.5, force: 0.45 }, chatouille: { shape: 'asl-bent-5', r: 0.013, fr: 16, force: 0.12 },
+  pince: { shape: 'pinch', r: 0, fr: 0, force: 0.7 }, porter: { shape: 'main-detendue', r: 0, fr: 0, force: 0.3 }, lever: { shape: 'tasse', r: 0, fr: 0, force: 0.25 }, fessee: { shape: 'main-detendue', r: 0, fr: 0, force: 0.85, impact: 1 }, claque: { shape: 'main-detendue', r: 0, fr: 0, force: 0.8, impact: 1 }, tape: { shape: 'main-detendue', r: 0, fr: 0, force: 0.45, impact: 1 } };    // force : 0,08 = effleurement, 0,55 = massage appuyé, 1 = coup. claque/fessée/gifle/coup : actions d'impact, à part (vitesse + choc)
+/* Sensibilité du corps, zone par zone, d'après les mesures publiées : acuité tactile (discrimination de deux points : lèvres 2-4 mm,
+   doigts 2-8 mm, paume 8-12 mm, front ~15 mm, avant-bras ~35 mm, dos ~39 mm, mollet ~45 mm — le visage et les mains sentent tout,
+   le dos presque rien) ; plaisir (cartes des zones érogènes, ~800 à 700 personnes interrogées : poitrine en tête hors organes, puis lèvres,
+   nuque/cou, oreilles, intérieur des cuisses, fesses, bas du dos ; pareil chez hommes et femmes) ; chatouilles (plante des pieds, flancs/côtes,
+   aisselles, ventre, creux du genou, paumes) ; douleur (yeux et lèvres très innervés, oreille et cheveux sensibles à la traction, dos peu).
+   Chaque canal va de 0 à 1. Utilisé pour choisir la réaction (visage, voix, sursaut) et bientôt l'événement envoyé au cerveau. */
+const SENSI = {
+  levres: { tact: 1.0, pla: 0.85, cha: 0.1, dou: 0.9 }, oeil: { tact: 0.9, pla: 0.05, cha: 0.1, dou: 1.0 }, nez: { tact: 0.7, pla: 0.1, cha: 0.2, dou: 0.6 },
+  oreille: { tact: 0.6, pla: 0.75, cha: 0.35, dou: 0.8 }, joue: { tact: 0.7, pla: 0.5, cha: 0.15, dou: 0.4 }, menton: { tact: 0.6, pla: 0.3, cha: 0.1, dou: 0.3 },
+  front: { tact: 0.55, pla: 0.2, cha: 0.1, dou: 0.4 }, tempe: { tact: 0.55, pla: 0.35, cha: 0.1, dou: 0.5 }, crane: { tact: 0.35, pla: 0.55, cha: 0.05, dou: 0.5 },
+  cheveux: { tact: 0.3, pla: 0.6, cha: 0.05, dou: 0.9 }, cou: { tact: 0.6, pla: 0.85, cha: 0.55, dou: 0.6 }, nuque: { tact: 0.55, pla: 0.8, cha: 0.5, dou: 0.5 },
+  epaule: { tact: 0.35, pla: 0.45, cha: 0.15, dou: 0.3 }, poitrine: { tact: 0.45, pla: 0.95, cha: 0.2, dou: 0.75 }, soussein: { tact: 0.45, pla: 0.95, cha: 0.2, dou: 0.75 }, ventre: { tact: 0.4, pla: 0.5, cha: 0.7, dou: 0.5 },
+  taille: { tact: 0.35, pla: 0.55, cha: 0.95, dou: 0.4 }, hanche: { tact: 0.35, pla: 0.6, cha: 0.5, dou: 0.35 }, fesse: { tact: 0.3, pla: 0.8, cha: 0.2, dou: 0.5 },
+  reins: { tact: 0.25, pla: 0.65, cha: 0.3, dou: 0.3 }, cuisse: { tact: 0.3, pla: 0.8, cha: 0.5, dou: 0.4 }, genou: { tact: 0.3, pla: 0.2, cha: 0.6, dou: 0.5 },
+  bras: { tact: 0.35, pla: 0.45, cha: 0.3, dou: 0.3 }, avantbras: { tact: 0.35, pla: 0.45, cha: 0.35, dou: 0.3 }, poignet: { tact: 0.6, pla: 0.4, cha: 0.4, dou: 0.4 },
+  main: { tact: 0.9, pla: 0.4, cha: 0.5, dou: 0.5 }, pied: { tact: 0.7, pla: 0.5, cha: 1.0, dou: 0.6 }, plante: { tact: 0.75, pla: 0.5, cha: 1.0, dou: 0.6 }, coude: { tact: 0.2, pla: 0.2, cha: 0.3, dou: 0.45 }, dos: { tact: 0.25, pla: 0.55, cha: 0.3, dou: 0.3 }, mollet: { tact: 0.3, pla: 0.35, cha: 0.35, dou: 0.35 },
+  cuisseint: { tact: 0.45, pla: 0.85, cha: 0.55, dou: 0.45 }, aine: { tact: 0.45, pla: 0.8, cha: 0.6, dou: 0.45 }, aisselle: { tact: 0.4, pla: 0.4, cha: 0.95, dou: 0.4 },   /* intérieur des cuisses, aine : parmi les zones les plus citées dans les cartes de plaisir (Turnbull 2014, Nummenmaa 2016) ; peau fine, chatouilleuse */
+};
+/* Ce que ça lui fait, comme chez un humain : chaque canal dépend de la zone, de la manière, de la FORCE et de la VITESSE.
+   - plaisir : maximal pour un effleurement LENT (1-10 cm/s, pic ~3 cm/s — fibres CT de la peau), sur une zone qui s'y prête ; trop fort ou trop vite = plus rien
+   - douleur : au-delà du seuil de la zone, elle monte en puissance de la force (loi de Stevens) : pincer un peu = rien, pincer fort = mal, très fort = très mal
+   - chatouille : contact léger, rapide, irrégulier, sur une zone chatouilleuse
+   - frisson : caresse lente sur nuque/cou/oreille/bras → chair de poule, petit tremblement d'épaules */
+function touchSense(zone, style, force, vReal) {   // vReal : vitesse RÉELLE du doigt sur la peau (cm/s), quand on la mesure (ton toucher) — sinon celle du style
+  const S = SENSI[zone] || { tact: 0.3, pla: 0.3, cha: 0.2, dou: 0.4 }, St = TOUCH_STYLES[style] || {}, F = force ?? St.force ?? 0.2;
+  const v = vReal != null ? vReal : (St.r || 0) * (St.fr || 0) * 100;                                       // vitesse de la main sur la peau, en cm/s
+  const lent = Math.exp(-Math.pow(Math.log((v + 0.5) / 3.5), 2) / 1.6);             // cloche centrée sur ~3,5 cm/s (0 à l'arrêt complet comme à grande vitesse)
+  const plaisir = S.pla * Math.max(style === 'pose' ? 0.25 : 0, lent) * Math.max(0, 1 - Math.pow(F / 0.6, 2));
+  const seuil = 0.45 - 0.25 * S.dou;                                                // zone fragile = seuil bas
+  const douleur = F > seuil ? S.dou * Math.min(1, Math.pow((F - seuil) / (1 - seuil), 1.6)) : 0;
+  const chatouille = S.cha * (v > 8 ? 1 : v / 8) * Math.max(0, 1 - F / 0.4);        // PAS de facteur d'acuité : la recherche a écarté la finesse de peau comme explication du chatouillement (les zones les plus chatouilleuses — aisselle, plante — ne sont pas les plus fines) ; c'est la carte S.cha qui porte tout
+  const frisson = plaisir > 0.45 && /nuque|cou|oreille|bras|avantbras|crane|cheveux|reins/.test(zone) ? Math.min(1, plaisir + 0.2) : 0;
+  return { plaisir: +plaisir.toFixed(2), douleur: +douleur.toFixed(2), chatouille: +chatouille.toFixed(2), frisson: +frisson.toFixed(2), force: F, vitesse_cm_s: +v.toFixed(1), S };
+}
+let lastTouch = null;                                   // dernier ressenti (pour le cerveau, la voix, les tests)
+function touchFeel(zone, style) {                 // réaction au toucher : la zone et la manière décident du visage (le corps et la voix suivront)
+  const S = SENSI[zone] || { tact: 0.3, pla: 0.3, cha: 0.2, dou: 0.4 };
+  if (zone === 'oeil') return { face: ['relaxed', 1.0], feel: 'delicat', S };                                            // paupière : œil qui se ferme
+  if (style === 'chatouille' || ((style === 'tapote' || style === 'gratte') && S.cha > 0.65)) return { face: ['happy', 0.95], feel: 'chatouille', S };
+  if ((style === 'caresse' || style === 'masse' || style === 'frotte') && S.pla > 0.7) return { face: ['relaxed', 0.9], feel: 'plaisir', S };
+  if (style === 'gratte') return { face: ['neutral', 0.4], feel: 'soulagement', S };
+  return { face: ['relaxed', 0.6], feel: 'neutre', S };
+}
+const ZONE_FR = { oeil: 'oeil', yeux: 'oeil', paupiere: 'oeil', 'paupière': 'oeil', nez: 'nez', narine: 'nez', oreille: 'oreille', oreilles: 'oreille', front: 'front', tempe: 'tempe', tempes: 'tempe', crane: 'crane', 'crâne': 'crane', 'tête': 'crane', tete: 'crane', machoire: 'machoire', 'mâchoire': 'machoire', reins: 'reins', dos: 'reins', 'avant-bras': 'avantbras', avantbras: 'avantbras', 'sous-sein': 'soussein', soussein: 'soussein', poignet: 'poignet', main: 'main', joue: 'joue', joues: 'joue', menton: 'menton', levres: 'levres', 'lèvres': 'levres', bouche: 'levres', cou: 'cou', nuque: 'nuque', cheveux: 'cheveux', epaule: 'epaule', 'épaule': 'epaule', epaules: 'epaule', poitrine: 'poitrine', seins: 'poitrine', ventre: 'ventre', taille: 'taille', hanche: 'hanche', hanches: 'hanche', fesse: 'fesse', fesses: 'fesse', croupe: 'fesse', cuisse: 'cuisse', cuisses: 'cuisse', genou: 'genou', cheville: 'cheville', chevilles: 'cheville', pied: 'cheville', bras: 'bras' };
+const TOUCH_VERB = { fesse: 'fessee', fessee: 'fessee', 'fessée': 'fessee', claque: 'claque', gifle: 'claque', tape: 'tape', caresse: 'caresse', caresses: 'caresse', touche: 'pose', pose: 'pose', tapote: 'tapote', frotte: 'frotte', frottetoi: 'frotte', masse: 'masse', effleure: 'caresse', serre: 'pose', gratte: 'gratte', grattes: 'gratte', chatouille: 'chatouille', chatouilles: 'chatouille' };
+function legPlaceApply(def, gt, w, b) {   // appelé AVANT le calcul des ancres : sinon la plante était lue sur la pose d'avant l'IK (normale à l'envers, vu)
+  if (def.legPlace && b.rUpLeg && b.rLowLeg && b.rFoot && b.lUpLeg && b.lLowLeg) {   // DEMI-TAILLEUR : la cheville droite se POSE sur la cuisse gauche (IK, recette « poser un pied » des jeux), genou ouvert vers l'extérieur
+    const lw = Math.max(0, Math.min(1, (gt - 0.4) / 0.9, (def.dur - 0.5 - gt) / 0.9)) * w;
+    if (lw > 0.005) {
+      const A = b.lUpLeg.getWorldPosition(new THREE.Vector3()), K = b.lLowLeg.getWorldPosition(new THREE.Vector3());
+      const T = A.lerp(K, 0.55).addScaledVector(_bf.Y, window.__lpY ?? 0.11).addScaledVector(_bf.X, window.__lpX ?? 0.0);   // sur le dessus de la cuisse gauche
+      const pole = new THREE.Vector3().addScaledVector(_bf.X, 1).addScaledVector(_bf.Y, -0.3).addScaledVector(_bf.Z, 0.35).normalize();   // genou vers SA droite, un peu bas et devant
+      b.rFoot.getWorldQuaternion(_ik.w); const keepF = _ik.w.clone();
+      armIK(b.rUpLeg, b.rLowLeg, b.rFoot, T, pole, lw);
+      b.rFoot.parent.getWorldQuaternion(_ik.w); b.rFoot.quaternion.copy(_ik.w.invert().multiply(keepF)); b.rFoot.updateWorldMatrix(false, false);
+      if (FOOTLOC.r) {                                                         // orientation : orteils vers l'avant, plante vers le haut et vers SA gauche (là où arrive la main gauche)
+        const fq = b.rFoot.getWorldQuaternion(new THREE.Quaternion()), t1 = FOOTLOC.r.t.clone().applyQuaternion(fq), s1 = FOOTLOC.r.s.clone().applyQuaternion(fq);
+        const su = window.__lpS ?? 0.65, s2 = new THREE.Vector3().addScaledVector(_bf.X, -Math.sqrt(1 - su * su)).addScaledVector(_bf.Y, su).normalize();
+        const t2 = _bf.Z.clone().addScaledVector(s2, -_bf.Z.dot(s2)).normalize();
+        s1.addScaledVector(t1, -s1.dot(t1)).normalize();
+        const m = new THREE.Matrix4(), q1 = new THREE.Quaternion().setFromRotationMatrix(m.makeBasis(t1, s1, t1.clone().cross(s1))), q2 = new THREE.Quaternion().setFromRotationMatrix(m.makeBasis(t2, s2, t2.clone().cross(s2)));
+        const R = new THREE.Quaternion().slerp(q2.multiply(q1.invert()), lw);
+        const nq = R.multiply(fq); b.rFoot.parent.getWorldQuaternion(_ik.w); b.rFoot.quaternion.copy(_ik.w.invert().multiply(nq)); b.rFoot.updateWorldMatrix(false, false);
+      }
+    }
+  }
+}
+function touchDef(zone, style, hand, force) {
   const Z = ZONES[zone], St = TOUCH_STYLES[style] || TOUCH_STYLES.caresse; if (!Z) return null;
-  const hk = hand || (Z[1][0] < 0 ? 'l' : 'r'), side = hk === 'r' ? 1 : -1, dir = Z[1][0] < 0 && hk === 'l' ? -1 : 1, o = Z[1].slice(); if (Z[1][0] < 0 && hk === 'l') o[0] = -o[0];
-  const dur = 5.5, def = { dur, blend: true, [hk]: [[0, 'sh', [0.2, -0.4, 0.05]], [0.9, Z[0], o], [dur - 1.3, Z[0], o], [dur, 'sh', [0.2, -0.4, 0.05]]], [hk + 'Pole']: Z[3], [hk + 'Hand']: [[0, 'open'], [0.7, St.shape], [dur - 1.2, 'open']], head: [0.03, 0, (zone === 'joue' ? 0.12 : 0.02) * side], face: ['relaxed', 0.6] };
-  if (St.r) def.circ = [Z[2][0], Z[2][1], St.r, St.fr];
+  const opt = Z[4] || {}, feel = touchFeel(zone, style), sense = touchSense(zone, style, force != null ? +force : undefined);
+  if ((TOUCH_STYLES[style] || {}).impact && sense.douleur > 0.3) feel.face = ['angry', Math.min(1, 0.3 + sense.douleur)];   // impact : visage au moment du choc ; sinon, le visage suit le ressenti CONTINU (tlSelfFeel)
+  else feel.face = null;
+  const deux = hand === 'lr';                                                          // les DEUX mains, chacune sur son côté (porter sa poitrine…)
+  const hk = deux ? 'r' : (opt.hand || hand || (Z[1][0] < 0 ? 'l' : 'r')), side = hk === 'r' ? 1 : -1, o = Z[1].slice(); if (Z[1][0] < 0 && (hk === 'l' || deux)) o[0] = -o[0];
+  const shape = opt.tip ? 'point' : St.shape;                                          // zone fine : index tendu, contact du bout du doigt
+  const dur = 5.5, def = { dur, blend: true, touch: true, touchTip: !!opt.tip, touchZone: zone, touchStyle: style, touchOut: o.slice(0, 3), touchAnchor: Z[0], touchGlide: !!St.r, touchHand: deux ? 'lr' : hk, touchFdir: opt.fdir || null, touchExt: opt.out || null, feel: feel.feel, sensi: feel.S,
+    head: [0.03, 0, (zone === 'joue' ? 0.12 : 0.02) * side], face: feel.face, sense };
+  for (const h2 of (deux ? ['l', 'r'] : [hk])) {
+    def[h2] = [[0, 'sh', [0.2, -0.4, 0.05]], [0.9, Z[0], o], [dur - 1.3, Z[0], o], [dur, 'sh', [0.2, -0.4, 0.05]]];
+    def[h2 + 'Pole'] = Z[3]; def[h2 + 'Hand'] = [[0, 'open'], [0.7, shape], [dur - 1.2, 'open']];
+  }
+  if (/^(avbL|poigL|mainL|cdL)$/.test(Z[0])) def.l = [[0, 'sh', [0.2, -0.4, 0.05]], [0.8, 'hips', [-0.14, 0.26, 0.30]], [dur - 1.2, 'hips', [-0.14, 0.26, 0.30]], [dur, 'sh', [0.2, -0.4, 0.05]]];   // le bras gauche se présente devant le buste, décollé du ventre
+  lastTouch = { zone, style, t: Date.now(), ...sense };
+  if (sense.douleur > 0.15) def.flinch = { t: 0.95, amp: Math.min(1, 0.25 + sense.douleur) };   // plus ça fait mal, plus le sursaut est fort
+  if (St.impact) {                                                           // IMPACT (fessée, claque) : la main part en arrière, frappe VITE, repart — et la chair encaisse le choc
+    def.dur = 3.4;
+    for (const h2 of (deux ? ['l', 'r'] : [hk])) {
+      const lift = o.slice(); lift[1] += 0.16; lift[0] += 0.10;              // armé : main levée en retrait au-dessus de la zone
+      def[h2] = [[0, 'sh', [0.2, -0.4, 0.05]], [0.55, Z[0], lift], [0.82, Z[0], o], [1.15, Z[0], lift], [def.dur, 'sh', [0.2, -0.4, 0.05]]];
+      def[h2 + 'Hand'] = [[0, 'open'], [0.4, 'main-detendue'], [def.dur - 1.0, 'open']];
+    }
+    def.touchWin = [0.72, 1.05];                                             // le contact de surface n'agit qu'à la frappe
+    def.impactAt = 0.82; def.impactForce = St.force * (force != null ? +force / St.force : 1);
+    def.flinch = { t: 0.86, amp: Math.min(1.3, 0.45 + sense.douleur + St.force * 0.4) };
+  }
+  if (St.r) def.circ = [Z[2][0], Z[2][1], St.r * (opt.tip ? 0.7 : 1), St.fr];
+  if (opt.raise && !deux) {                                                  // AISSELLE : le bras du côté touché se LÈVE (main derrière la tête) pour exposer le creux, comme un humain
+    const oh = hk === 'r' ? 'l' : 'r';
+    def[oh] = [[0, 'sh', [0.2, -0.4, 0.05]], [0.9, 'head', [0.17, 0.16, -0.03]], [dur - 1.2, 'head', [0.17, 0.16, -0.03]], [dur, 'sh', [0.2, -0.4, 0.05]]];
+    def[oh + 'Pole'] = [1, 0.6, -0.4]; def[oh + 'Hand'] = [[0, 'open'], [0.8, 'main-detendue']];
+  }
+  if (sense.chatouille > 0.55 && !St.impact) { def.flinch = def.flinch || { t: 1.15, amp: Math.min(0.8, 0.25 + sense.chatouille * 0.4) }; }   // gargalesis (aisselle, pied) : torsion-rire + retrait réflexe — réflexe protecteur (Harvard/Darwin)
+  if (opt.seat) {                                                            // ASSISE AU SOL, jambes devant un peu ouvertes, buste penché : la main va naturellement sur l'intérieur de la cuisse
+    const k = window.__seatK || (opt.seat === 'genou' ? SEAT_KNEE : SEAT_K);
+    def.dur = 6.5; def.fk = [[0, {}], [1.3, k], [def.dur - 1.3, k], [def.dur, {}]]; def.ground = 1;
+    def[hk] = [[0, 'sh', [0.2, -0.4, 0.05]], [1.5, Z[0], o], [def.dur - 1.3, Z[0], o], [def.dur, 'sh', [0.2, -0.4, 0.05]]];
+    const oh = hk === 'l' ? 'r' : 'l'; def[oh] = [[0, 'sh', [0.2, -0.4, 0.05]], [1.3, 'hips', [0.2, -0.08, -0.12]], [def.dur - 1.3, 'hips', [0.2, -0.08, -0.12]], [def.dur, 'sh', [0.2, -0.4, 0.05]]];   // l'autre main en appui derrière, au sol
+    def.touchWin = [1.3, def.dur - 0.85];
+  }
+  if (opt.sole) {                                                            // ASSISE AU SOL, pied ramené (pose réglable par window.__soleK pendant les essais)
+    const k = window.__soleK || SOLE_K;
+    def.dur = 7.0; def.fk = [[0, {}], [1.3, k], [def.dur - 1.3, k], [def.dur, {}]]; def.ground = 1;
+    def[hk] = [[0, 'sh', [0.2, -0.4, 0.05]], [1.5, Z[0], o], [def.dur - 1.3, Z[0], o], [def.dur, 'sh', [0.2, -0.4, 0.05]]];
+    def.legPlace = 1;
+    const oh = hk === 'l' ? 'r' : 'l'; def[oh] = [[0, 'sh', [0.2, -0.4, 0.05]], [1.3, 'dosD', [0, 0.05, 0]], [def.dur - 1.3, 'dosD', [0, 0.05, 0]], [def.dur, 'sh', [0.2, -0.4, 0.05]]]; def.touchXB = 1;   // l'autre main tient la cheville (comme un humain qui se masse la plante)
+    def.touchWin = [1.2, def.dur - 0.85];
+  }
+  if ((opt.grip || opt.crouch) && Z[0] === 'chvD') {                                         // ATTRAPER SA CHEVILLE : penchée profonde (vérifié : la jambe levée reste hors de portée du bras — 0,77 m au mieux pour 0,47 m de bras ; l'humain se penche aussi)
+    const k = { spine: [opt.crouch ? 1.05 : 0.9, 0, 0.1], chest: [opt.crouch ? 0.8 : 0.55, 0, opt.crouch ? 0.18 : 0.05], hips: [0.6, 0, 0],   // pied : buste plus enroulé et penché vers la droite (mesuré : bras tendu à 99,7 % de sa longueur, la pulpe dérivait de 10 mm)
+    lUpLeg: [-1.95, 0, 0], rUpLeg: [-1.95, 0, 0], lLowLeg: [2.25, 0, 0], rLowLeg: [2.25, 0, 0], neck: [-0.55, 0, 0] };   // ACCROUPIE penchée : c'est comme ça qu'on attrape sa cheville (le bassin descend aux talons, l'épaule arrive à portée)
+    def.dur = 7.0; def.fk = [[0, {}], [1.1, k], [def.dur - 1.3, k], [def.dur, {}]]; def.ground = 1;
+    def[hk] = [[0, 'sh', [0.2, -0.4, 0.05]], [1.3, Z[0], o], [def.dur - 1.3, Z[0], o], [def.dur, 'sh', [0.2, -0.4, 0.05]]];
+    def[hk + 'Hand'] = [[0, 'open'], [1.2, opt.grip ? 'tasse' : shape], [def.dur - 1.2, 'open']];   // saisir = tasse ; toucher/caresser le pied = la forme du style
+    def.l = [[0, 'sh', [0.2, -0.4, 0.05]], [1.1, 'hips', [0.16, -0.28, 0.28]], [def.dur - 1.3, 'hips', [0.16, -0.28, 0.28]], [def.dur, 'sh', [0.2, -0.4, 0.05]]];   // la main libre s'appuie sur le genou (équilibre naturel)
+    def.touchWin = [1.0, def.dur - 0.85];
+    if (style === 'lever') {                                                 // « attraper sa jambe et la LEVER d'une main » : elle saisit accroupie, se redresse, la MAIN porte la cheville devant — la JAMBE SUIT la main (chaîne fermée, jambe esclave)
+      def.dur = 10.0;
+      const kup = { spine: [-0.12, 0, 0.06], chest: [-0.06, 0, 0], hips: [-0.05, 0, 0], lUpLeg: [-0.05, 0, 0], neck: [0.08, 0, 0] };   // debout, buste léger en arrière (contre-poids)
+      def.fk = [[0, {}], [1.1, k], [3.0, k], [4.6, kup], [def.dur - 1.5, kup], [def.dur, {}]];
+      def[hk] = [[0, 'sh', [0.2, -0.4, 0.05]], [1.3, Z[0], o], [3.0, Z[0], o], [4.6, 'hips', [0.14, -0.18, 0.42]], [def.dur - 1.5, 'hips', [0.14, -0.18, 0.42]], [def.dur, 'sh', [0.2, -0.4, 0.05]]];
+      def[hk + 'Hand'] = [[0, 'open'], [1.2, 'tasse'], [def.dur - 1.2, 'open']];
+      def.touchWin = [1.0, 3.2];                                             // le toucher actif ne sert qu'à FERMER la prise ; ensuite l'offset conservé garantit le contact (sinon le différé tirait la main vers la jambe-esclave : personne ne menait, vu)
+      def.legFollow = { a: 3.0, hk };                                        // dès la saisie faite, la jambe droite est ESCLAVE de la main
+    }
+  } else if (opt.lean) {                                                     // zone basse (genou…) : elle se penche pour l'atteindre, comme un humain
+    const L = opt.lean, k = { spine: [L * 0.5, 0, 0], chest: [L * 0.35, 0, 0], hips: [L * 0.35, 0, 0], lUpLeg: [-L * 0.55, 0, 0], rUpLeg: [-L * 0.55, 0, 0], lLowLeg: [L * 0.35, 0, 0], rLowLeg: [L * 0.35, 0, 0], neck: [-L * 0.3, 0, 0] };
+    if (opt.spread) { k.rUpLeg[2] += opt.spread; k.lUpLeg[2] -= opt.spread; }   // jambes écartées : les cuisses pleines se touchent, la main n'entre pas sinon (vu : paume bloquée à 12 cm, doigts dans la cuisse)
+    def.fk = [[0, {}], [0.9, k], [dur - 1.3, k], [dur, {}]]; def.ground = 1;
+  }
   return def;
 }
-function touchPlay(zone, style, hand) {
-  const d = touchDef(zone, style, hand); if (!d) return false;
+function touchPlay(zone, style, hand, force) {
+  const d = touchDef(zone, style, hand, force); if (!d) return false;
   const name = 'touch:' + zone + ':' + style + (hand ? ':' + hand : ''); GLIB[name] = d; return playGesture(name);
 }
 function touchParse(t) {                                   // « caresse-toi le ventre », « touche ta joue », « tapote tes cuisses »
@@ -350,6 +559,7 @@ function touchParse(t) {                                   // « caresse-toi le 
 /* ================= CAMÉRA INTELLIGENTE : cadre selon ce qu'elle fait (danse = plan large qui tourne, objets/mains = buste, parole = buste) ================= */
 const AUTOCAM = { lastMode: 0, on: store.get('aiko.autocam', '1') !== '0', saved: null, lastUser: 0, mode: '' };
 function autoCamUpdate(dt) {
+  if (window.__noautocam) return;                                            // épreuves : la caméra reste où le test l'a mise
   const A = AUTOCAM, now = performance.now();
   if (!A.on || LESSON.on || currentPose === 'bed' || document.hidden || !vrm) { CAM.slow = false; return; }
   if (now - A.lastUser < 9000) { CAM.slow = false; return; }
@@ -389,8 +599,8 @@ function armKeepOut(b) {
   _bf.Y.addScaledVector(_bf.X, -_bf.Y.dot(_bf.X)).normalize();
   _bf.Z.crossVectors(_bf.Y, _bf.X).normalize();
   b.hips.getWorldPosition(_bf.anc.hips);
-  for (const [up, lo, hand, ds] of [[b.rArm, b.rLowArm, b.rHand, _kd.r], [b.lArm, b.lLowArm, b.lHand, _kd.l]]) {
-    if (!up || !lo || !hand) continue;
+  for (const [up, lo, hand, ds, hk] of [[b.rArm, b.rLowArm, b.rHand, _kd.r, 'r'], [b.lArm, b.lLowArm, b.lHand, _kd.l, 'l']]) {
+    if (!up || !lo || !hand || TOUCHW[hk] > 0.5) continue;                 // main posée volontairement sur la peau : on ne la repousse pas
     _kd.qu.copy(up.quaternion); _kd.ql.copy(lo.quaternion);
     hand.getWorldPosition(_kd.h0);
     up.getWorldPosition(_ak.S); lo.getWorldPosition(_ak.E); _ak.pole.copy(_ak.E).sub(_ak.S);
@@ -410,22 +620,60 @@ function armKeepOut(b) {
     }
     hand.getWorldPosition(_ak.H); _kd.d.copy(_ak.H).sub(_kd.h0);      // correction brute de cette image
     const loc = new THREE.Vector3(_kd.d.dot(_bf.X), _kd.d.dot(_bf.Y), _kd.d.dot(_bf.Z));   // dans le repère du corps
-    ds.lerp(loc, kk);
+    if (loc.length() > 0.2) loc.setLength(0.2);
+    { const st = loc.sub(ds), l = st.length(), mx = 1.2 * dtk; if (l > mx) st.multiplyScalar(mx / l); ds.addScaledVector(st, Math.max(kk, l > mx ? 1 : kk)); }   // lissée ET bornée en vitesse (1,2 m/s) : la surface du corps peut changer de côté d'une image à l'autre, pas la main
     if (ds.length() < 0.0012) { up.quaternion.copy(_kd.qu); lo.quaternion.copy(_kd.ql); up.updateWorldMatrix(false, true); continue; }
     up.quaternion.copy(_kd.qu); lo.quaternion.copy(_kd.ql); up.updateWorldMatrix(false, true);
     _ak.T.copy(_kd.h0).addScaledVector(_bf.X, ds.x).addScaledVector(_bf.Y, ds.y).addScaledVector(_bf.Z, ds.z);
     armIK(up, lo, hand, _ak.T, pole0, 1);
   }
 }
-function applyLib(def, gt, w, b) {
-  if (!b.rArm || !b.lArm || !b.head || !b.hips) return;
-  rig.updateMatrixWorld(true);
+/* Repère du corps (X : vers SA droite, Y : haut, Z : avant) et ancres des zones — utilisables HORS des gestes (toucher par la personne) */
+function bfFrame(b) {
   b.rArm.getWorldPosition(_bf.r); b.lArm.getWorldPosition(_bf.l);
   _bf.X.copy(_bf.r).sub(_bf.l).normalize();                              // vers SA droite
   b.hips.getWorldQuaternion(_ik.w); _bf.Y.set(0, 1, 0).applyQuaternion(_ik.w);
   _bf.Y.addScaledVector(_bf.X, -_bf.Y.dot(_bf.X)).normalize();
   _bf.Z.crossVectors(_bf.Y, _bf.X).normalize();                          // vers l'avant (son regard)
+}
+function bfAnchors(b) {
   b.head.getWorldPosition(_bf.anc.head); _bf.anc.sh.copy(_bf.r).add(_bf.l).multiplyScalar(0.5); b.hips.getWorldPosition(_bf.anc.hips);
+  { b.head.getWorldQuaternion(_ik.w);                                     // repère de la TÊTE : les zones du visage (joue, nez, oreille…) suivent la tête quand elle tourne ou penche
+    (_bf.hX || (_bf.hX = new THREE.Vector3())).set(-1, 0, 0).applyQuaternion(_ik.w);
+    (_bf.hY || (_bf.hY = new THREE.Vector3())).set(0, 1, 0).applyQuaternion(_ik.w);
+    (_bf.hZ || (_bf.hZ = new THREE.Vector3())).set(0, 0, 1).applyQuaternion(_ik.w); }
+  if (b.rFoot) rawOf(b.rFoot).getWorldPosition(_bf.anc.chvD);                 // cheville droite (pour l'attraper)
+  if (b.rFoot && b.rToes && b.rLowLeg) {                                      // PLANTE du pied droit : point et normale tirés de l'ORIENTATION RÉELLE de l'os du pied (vecteurs locaux mesurés une fois debout — sans supposer ses axes)
+    const kn = rawOf(b.rLowLeg).getWorldPosition(_bf.tmp), to = rawOf(b.rToes).getWorldPosition(_bf.anc.plD);
+    const fq = b.rFoot.getWorldQuaternion(_bf.fq || (_bf.fq = new THREE.Quaternion()));
+    if (!FOOTLOC.r && kn.y - _bf.anc.chvD.y > 0.97 * kn.distanceTo(_bf.anc.chvD)) {   // debout, tibia vertical : la plante regarde le sol (-Y)
+      const td = new THREE.Vector3().copy(to).sub(_bf.anc.chvD).normalize(), sd = new THREE.Vector3(0, -1, 0).addScaledVector(td, td.y).normalize(), iq = fq.clone().invert();
+      FOOTLOC.r = { t: td.applyQuaternion(iq), s: sd.applyQuaternion(iq) }; }
+    if (FOOTLOC.r) _bf.soleN.copy(FOOTLOC.r.s).applyQuaternion(fq);
+    else { const fd = _bf.sc.copy(to).sub(_bf.anc.chvD).normalize(), sh = kn.sub(_bf.anc.chvD).negate().normalize(); _bf.soleN.copy(sh).addScaledVector(fd, -sh.dot(fd)).normalize(); }
+    _bf.anc.plD.lerp(_bf.anc.chvD, 0.5); _bf.anc.dosD.copy(_bf.anc.plD).addScaledVector(_bf.soleN, -0.03); _bf.anc.plD.addScaledVector(_bf.soleN, 0.045); }   // plD : milieu de la voûte, sous le pied ; dosD : le dessus du pied (où l'autre main le tient)
+  if (b.rUpLeg && b.rLowLeg && b.lUpLeg && b.lLowLeg) {                       // INTÉRIEUR DE LA CUISSE droite, à mi-hauteur : point et direction tirés des deux os de cuisse (la face interne regarde l'autre cuisse)
+    const rh = rawOf(b.rUpLeg).getWorldPosition(new THREE.Vector3()), rk = rawOf(b.rLowLeg).getWorldPosition(new THREE.Vector3());
+    const lm = rawOf(b.lUpLeg).getWorldPosition(new THREE.Vector3()).lerp(rawOf(b.lLowLeg).getWorldPosition(new THREE.Vector3()), 0.55);
+    _bf.anc.cuD.copy(rh).lerp(rk, 0.55); const ax = rk.sub(rh).normalize();
+    _bf.cuN.copy(lm).sub(_bf.anc.cuD); _bf.cuN.addScaledVector(ax, -_bf.cuN.dot(ax)).normalize();
+    _bf.anc.cuD.addScaledVector(_bf.cuN, 0.075); }
+  if (b.rLowLeg && b.rFoot && b.rUpLeg) {                                     // MOLLET droit : mi-mollet, face arrière-externe (direction tirée des os : vers la cuisse quand le genou est plié, + vers l'extérieur)
+    const kn = rawOf(b.rLowLeg).getWorldPosition(new THREE.Vector3()), an = rawOf(b.rFoot).getWorldPosition(new THREE.Vector3()), hp = rawOf(b.rUpLeg).getWorldPosition(new THREE.Vector3());
+    _bf.anc.mlD.copy(kn).lerp(an, 0.35); const ax = an.sub(kn).normalize();
+    _bf.mlN.copy(hp).sub(_bf.anc.mlD); _bf.mlN.addScaledVector(ax, -_bf.mlN.dot(ax)).normalize();
+    const lat = _bf.X.clone().addScaledVector(ax, -_bf.X.dot(ax)).normalize(); _bf.mlN.addScaledVector(lat, 0.8).normalize();
+    _bf.anc.mlD.addScaledVector(_bf.mlN, 0.055); }
+  if (b.lLowArm && b.lHand) { rawOf(b.lLowArm).getWorldPosition(_bf.anc.poigL); _bf.anc.cdL.copy(_bf.anc.poigL); rawOf(b.lHand).getWorldPosition(_bf.anc.mainL);   // cdL : le coude gauche (articulation)      // ancres sur le bras gauche lui-même, dans l'espace AFFICHÉ (le rig diverge de 1-3 cm : paume enfoncée, vu)
+    _bf.anc.avbL.copy(_bf.anc.poigL).lerp(_bf.anc.mainL, 0.55); _bf.anc.poigL.copy(_bf.anc.mainL);
+    const M0 = b.hand && b.hand.l && b.hand.l.Middle && b.hand.l.Middle[0]; if (M0) rawOf(M0).getWorldPosition(_bf.anc.mainL); }
+}
+function applyLib(def, gt, w, b) {
+  if (!b.rArm || !b.lArm || !b.head || !b.hips) return;
+  rig.updateMatrixWorld(true);
+  bfFrame(b);
+  legPlaceApply(def, gt, w, b);
+  bfAnchors(b);
   for (const [hk, side, up, lo, hand, pk] of [['r', 1, b.rArm, b.rLowArm, b.rHand, 'rPole'], ['l', -1, b.lArm, b.lLowArm, b.lHand, 'lPole']]) {
     const keys = def[hk]; if (!keys) continue;
     const tg0 = libKey(keys, gt, side, def.osc || null, gt, def.blend).clone();
@@ -433,7 +681,47 @@ function applyLib(def, gt, w, b) {
       const ax = [_bf.X, _bf.Y, _bf.Z], cc = def.circ, sd = (cc[0] === 0 ? side : 1), sd2 = (cc[1] === 0 ? side : 1);
       tg0.addScaledVector(ax[cc[0]], cc[2] * Math.sin(gt * cc[3]) * sd).addScaledVector(ax[cc[1]], cc[2] * Math.cos(gt * cc[3]) * sd2);
     }
-    const tg = pushOut(tg0, def.noPush ? -1 : 0.032);
+    const W0 = def.touchWin ? def.touchWin[0] : 0.45, W1 = def.touchWin ? def.touchWin[1] : def.dur - 0.85, Wr = def.touchWin ? 0.1 : 0.45;
+    const tsw = def.touch && (!def.touchHand || def.touchHand === hk || def.touchHand === 'lr') && SURF.ok && !window.__noSurfHand ? Math.max(0, Math.min(1, (gt - W0) / Wr)) * Math.max(0, Math.min(1, (W1 - gt) / Wr)) : 0;   // seul la main TOUCHEUSE a le pipeline de contact (le bras qui se présente n'essaie pas de se toucher lui-même)   // toucher : la paume se pose sur la peau à l'arrivée, la quitte au départ
+    let tgREF = null, zref = null;
+    if (tsw > 0.01) {                                                          // UNE SEULE cible pour le bras : le vrai point de peau de la zone (pas une approximation que la paume devrait rattraper ensuite)
+      surfUpdate(); const zo = _bf.zo[hk] || (_bf.zo[hk] = { point: new THREE.Vector3(), normal: new THREE.Vector3() });
+      const zkey = def.touchZone || def.name || 'touch', ZL = SLOCK[hk];
+      // zref : le point de zone PUR (ancre d'auteur + décalage), indépendant du temps du geste — PAS la clé de bras en cours de fondu
+      // (vu : pendant l'approche, la clé passait devant le sein, le verrou s'y posait, et la « joue » restait sur le sein)
+      const to = def.touchOut, hz = def.touchAnchor === 'head' && _bf.hX;
+      zref = new THREE.Vector3().copy(_bf.anc[def.touchAnchor] || _bf.anc.sh);
+      if (def.touchAnchor === 'plD') zref.addScaledVector(_bf.soleN, 0.01);
+      else if (def.touchAnchor === 'cuD') zref.addScaledVector(_bf.cuN, 0.01);
+      else if (def.touchAnchor === 'mlD') zref.addScaledVector(_bf.mlN, 0.01);
+      else if (to) zref.addScaledVector(hz ? _bf.hX : _bf.X, to[0] * side).addScaledVector(hz ? _bf.hY : _bf.Y, to[1]).addScaledVector(hz ? _bf.hZ : _bf.Z, to[2]);
+      let found;
+      const glide = def.touchGlide;                                           // caresse/frottement : l'ancre GLISSE sur la peau (jamais de verrou — il tuerait le mouvement)
+      if (!glide && ZL && ZL.key === zkey && ZL.ref && ZL.ref.distanceTo(zref) < 0.14) { lockPoint(ZL, zo); found = true; }   // l'ancre est posée ET toujours près de la référence : le bras vise LE MÊME point de peau qu'elle
+      else {
+        const seed = _bf.tg2.copy(zref);
+        if (glide && def.circ) {
+          const cc = def.circ, amp = Math.max(0, Math.min(1, (tsw - 0.55) * 2.8));   // on POSE d'abord, on caresse ensuite (le raccord d'arrivée retournait la paume, vu)
+          if (/^(avbL|poigL|mainL|cdL)$/.test(def.touchAnchor)) {                // membre fin : la caresse LONGE l'avant-bras (un cercle en ferait le tour : paume qui tournoie, vu)
+            _bf.pl.copy(_bf.anc.poigL).sub(_bf.anc.avbL).normalize();
+            seed.addScaledVector(_bf.pl, cc[2] * 1.3 * (Math.sin(gt * cc[3]) - 0.55) * amp);   // course décalée vers le coude : au bout de course elle montait sur la MAIN (ancre perpendiculaire, vu)
+          } else { const ax = [_bf.X, _bf.Y, _bf.Z], sd = (cc[0] === 0 ? side : 1), sd2 = (cc[1] === 0 ? side : 1);
+            seed.addScaledVector(ax[cc[0]], cc[2] * Math.sin(gt * cc[3]) * sd * amp).addScaledVector(ax[cc[1]], cc[2] * Math.cos(gt * cc[3]) * sd2 * amp); } }
+        if (def.touchAnchor === 'plD') tgREF = _bf.soleN.clone();
+        else if (def.touchAnchor === 'cuD') tgREF = _bf.cuN.clone();
+        else if (def.touchAnchor === 'mlD') tgREF = _bf.mlN.clone();
+        else if (def.touchExt) tgREF = new THREE.Vector3().addScaledVector(_bf.X, def.touchExt[0] * side).addScaledVector(_bf.Y, def.touchExt[1]).addScaledVector(_bf.Z, def.touchExt[2]).normalize();   // direction d'extérieur d'AUTEUR (dessus du pied : vers le haut)
+        else if (/^(avbL|poigL|mainL|chvD|cdL)$/.test(def.touchAnchor)) tgREF = new THREE.Vector3().copy(zref).sub(_bf.anc.hips).normalize();   // ancre MOBILE (membre qui bouge) : l'extérieur = loin du tronc, pas un axe du corps figé (vu : caresse posée sur la face interne de l'avant-bras)
+        else tgREF = to ? new THREE.Vector3().addScaledVector(hz ? _bf.hX : _bf.X, to[0] * side).addScaledVector(hz ? _bf.hY : _bf.Y, to[1]).addScaledVector(hz ? _bf.hZ : _bf.Z, to[2]).normalize() : null;
+        found = surfClosest(seed, def.touchXB ? 3 : (hk === 'l' ? 1 : 2), zo, 0.18, tgREF) !== null;   // requête depuis le point de zone PUR (+ le cercle de la caresse), 18 cm au plus
+      }
+      if (found) {                                                             // la cible d'IK intègre le décalage paume-poignet ; elle s'impose au rythme du toucher (l'approche garde sa courbe)
+        const mw = Math.max(0, Math.min(1, (gt - 0.45) / 0.45));
+        if (def.touchTip) tg0.lerp(_bf.tg2.copy(zo.point).addScaledVector(zo.normal, 0.14), mw);
+        else { surfAimWrist(b, hk, hand, zo, _bf.tg2); tg0.lerp(_bf.tg2, mw); }
+      }
+    }
+    const tg = pushOut(tg0, def.noPush || tsw > 0.5 ? -1 : 0.032);
     const pp = def[pk] || [1, -0.7, -0.3];
     _bf.pl.set(0, 0, 0).addScaledVector(_bf.X, pp[0] * side).addScaledVector(_bf.Y, pp[1]).addScaledVector(_bf.Z, pp[2]);
     { // rythme scapulo-huméral : au-delà de ~35° d'élévation, l'omoplate pivote et l'épaule monte (≈ 1/3 du mouvement), comme chez un humain
@@ -454,22 +742,74 @@ function applyLib(def, gt, w, b) {
       if (lo && fa) lo.rotateX(fa);
       hand.rotation.set(twAll * 0.35 * w, dev * w, fl * w);
     }
+    if (SURF.xb) SURF.xb[hk] = tsw > 0 && !!def.touchXB;
+    if (tsw > 0) { SURFREQ[hk] = { up, lo, hand, w: tsw * tsw * (3 - 2 * tsw) * w, pole: _bf.pl.clone(), tip: def.touchTip, key: def.touchZone || def.name || 'touch', tg: (_bf.zo[hk] && _bf.zo[hk].point.clone()) || tg0.clone(), pref: tgREF, ref: zref, glide: def.touchGlide, fdir: def.touchFdir ? new THREE.Vector3().addScaledVector(_bf.X, def.touchFdir[0] * side).addScaledVector(_bf.Y, def.touchFdir[1]).addScaledVector(_bf.Z, def.touchFdir[2]).normalize() : null }; TOUCHW[hk] = tsw;
+      if (tsw > 0.9 && def.touchZone && !TOUCH_STYLES[def.touchStyle]?.impact && _bf.zo[hk] && typeof tlSelfFeel === 'function') {   // ressenti CONTINU : vitesse réelle du point de contact sur la peau
+        const zp = _bf.zo[hk].point, kp = '_zp' + hk, kv = '_v' + hk, dts = Math.max(1e-3, _simDt || 0.016);
+        const vi = def[kp] ? Math.min(60, zp.distanceTo(def[kp]) / dts * 100) : 0; (def[kp] || (def[kp] = new THREE.Vector3())).copy(zp);
+        def[kv] = (def[kv] || 0) + (vi - (def[kv] || 0)) * Math.min(1, dts * 6);
+        tlSelfFeel(def.touchZone, def.touchStyle, (TOUCH_STYLES[def.touchStyle] || {}).force ?? 0.2, def[kv], dts, side); }
+      else if (tsw < 0.5) def['_zp' + hk] = null;
+      if (tsw < 0.1) def._felt = 0;
+      if (tsw > 0.9 && !def._felt) { def._felt = 1; lastTouch = { zone: def.touchZone, style: def.touchStyle, t: Date.now(), ...def.sense }; if (typeof sensLearn === 'function') sensLearn(def.touchZone, def.touchStyle, def.sense); }   // le ressenti naît quand le toucher S'ACCOMPLIT (à chaque fois, pas à la création du geste)
+      if (def.impactAt && gt < def.impactAt - 0.3) def['imp' + hk] = 0;                        // nouveau passage du geste (les defs sont en cache) : réarmer le choc
+      if (def.impactAt && !def['imp' + hk] && gt >= def.impactAt) { def['imp' + hk] = 1;        // CHOC dans la chair, une seule fois, à l'instant de la frappe
+        const pat = /fesse/.test(def.touchZone) ? (hk === 'l' ? /^LeftButtock/ : /^RightButtock/) : /poitrine|soussein/.test(def.touchZone) ? (hk === 'l' ? /^LeftBreast/ : /^RightBreast/) : null;
+        if (pat && _bf.zo[hk]) { const dir = _bf.zo[hk].normal.clone().negate(); IMPACT.q.push({ pat, v: dir.multiplyScalar(0.9 * (def.impactForce || 0.8)) }); } }
+      if (!window.__nosup && /soussein|poitrine/.test(def.touchZone || '') && /porter|pose|masse/.test(def.touchStyle || '')) SUPPORT[hk] = tsw * (TOUCH_STYLES[def.touchStyle] ? Math.min(1, TOUCH_STYLES[def.touchStyle].force * 2.4) : 0.5); }   // tg : le point VISÉ (la zone), pas « la peau la plus proche »   // demande gardée : posée APRÈS la physique des chairs (la peau bouge encore : poitrine, tête…)
+  }
+  if (def.legFollow && gt > def.legFollow.a && b.rUpLeg && b.rLowLeg && b.rFoot) {     // CHAÎNE FERMÉE : la cheville tenue SUIT la main qui la porte
+    const LF = def.legFollow, hand2 = LF.hk === 'l' ? b.lHand : b.rHand;
+    const lw = Math.min(1, (gt - LF.a) / 0.7) * w;
+    _bf.tg2.copy(hand2.getWorldPosition(_bf.pl)); _bf.tg2.y -= 0.03;          // la prise : cheville ~3 cm sous le centre de la main (offset ANATOMIQUE fixe — le capturer était piégé : main rig et main affichée divergent de 60 cm en accroupi profond, vu)
+    // IK ANALYTIQUE sagittale (l'IK par quaternions se faisait broyer par les limites articulaires : flexion encodée en lacet+roulis, vu)
+    const H = b.rUpLeg.getWorldPosition(_bf.pl), v = _bf.tg2.sub(H);
+    if (!def._legL) { const g2 = b.rLowLeg.getWorldPosition(new THREE.Vector3()); def._legL = [H.distanceTo(g2), g2.distanceTo(b.rFoot.getWorldPosition(new THREE.Vector3()))]; }
+    const L1 = def._legL[0], L2 = def._legL[1];
+    const vf = v.dot(_bf.Z), vu = v.dot(_bf.Y), vl = v.dot(_bf.X);
+    const d2d = Math.max(0.15, Math.min(Math.hypot(vf, vu), L1 + L2 - 0.01));
+    const phi = Math.atan2(vf, -vu);                                          // élévation depuis la verticale basse
+    const kneeIn = Math.acos(Math.max(-1, Math.min(1, (L1 * L1 + L2 * L2 - d2d * d2d) / (2 * L1 * L2))));
+    const alpha = Math.acos(Math.max(-1, Math.min(1, (L1 * L1 + d2d * d2d - L2 * L2) / (2 * L1 * d2d))));
+    const hipX = -(phi + alpha), kneeX = Math.PI - kneeIn;                    // conventions sondées : cuisse avant = x négatif, genou plie = x positif
+    b.rUpLeg.rotation.x += (hipX - b.rUpLeg.rotation.x) * lw;
+    b.rUpLeg.rotation.z += (Math.atan2(vl, d2d) * 0.8 - b.rUpLeg.rotation.z) * lw;
+    b.rLowLeg.rotation.x += (kneeX - b.rLowLeg.rotation.x) * lw;
+    b.rFoot.rotation.x += (0.45 - b.rFoot.rotation.x) * lw;                   // pied détendu, pointe un peu tombante
   }
 }
 
 
 // Fessier actif pendant certains gestes (twerk) : chaque fesse rebondit de haut en bas avec la bascule du bassin,
 // en léger décalage gauche/droite pour qu'elles se rencontrent. def.butt = [rebond, fréquence, décalage, phase].
-const _bb = {};
+const _bb = {}, _bbS = {}; let WING = 1.5;   // amplitude du battement des fesses (part de la forme « écartées »)
+const _gm = { m: null, o: -1, c: -1 };
+function gluteMorph(open, close) {          // formes sculptées « fesses écartées / serrées »
+  if (_gm.m === null) { _gm.m = false; vrm.scene.traverse((o) => { if (o.isMesh && o.morphTargetDictionary && 'glute_open' in o.morphTargetDictionary) { _gm.m = o; _gm.o = o.morphTargetDictionary.glute_open; _gm.c = o.morphTargetDictionary.glute_close; } }); }
+  if (!_gm.m) return; _gm.m.morphTargetInfluences[_gm.o] = open; if (_gm.c >= 0) _gm.m.morphTargetInfluences[_gm.c] = close;
+}
 function buttBounce() {
-  const d = gst && gst.lib && gst.lib.butt; if (!d || !vrm) return;
+  if (!vrm) return;
+  let fx = 0; for (const j of jig) if (j.butt) fx = Math.max(fx, j.mf || 0);     // cuisses fléchies : les fesses s'ouvrent un peu d'elles-mêmes
+  const d = gst && gst.lib && gst.lib.butt; if (!d) { gluteMorph(0.35 * fx, 0); return; }
   const t = gst.t, e = Math.max(0, Math.min(1, t / 0.6, (gst.dur - t) / 0.6)), w = e * e * (3 - 2 * e);
   const [up, fr, alt, ph, clap] = d;
+  const th = t * fr + (ph || 0), sk = th + 0.45 * Math.sin(th);          // onde asymétrique : la fesse monte d'un coup sec et retombe plus lentement (poids de la chair)
+  const acc = 0.8 + 0.2 * Math.sin(th / 4);                              // accents : un temps fort tous les quatre battements, pas un métronome
   for (const [n, sg] of [['LeftButtock', 1], ['RightButtock', -1]]) {
     const bo = _bb[n] || (_bb[n] = vrm.scene.getObjectByName(n)); if (!bo) continue;
-    const a = up * Math.sin(t * fr + (ph || 0)) + sg * alt * Math.sin(t * fr + (ph || 0) + 1.2);
-    const c = Math.pow(Math.max(0, Math.sin(t * fr + (ph || 0) + 2.4)), 3);   // claquement : les deux fesses se rapprochent d'un coup sec, puis se séparent
-    bo.rotateX(-a * w); bo.rotateZ(-sg * (clap || 0) * c * w);
+    const a = (up * Math.sin(sk) + sg * alt * Math.sin(sk + 1.2)) * acc;
+    const c = Math.pow(Math.max(0, Math.sin(th + 2.4)), 4);              // claquement : les deux fesses se rejoignent d'un coup sec…
+    const rb = Math.pow(Math.max(0, Math.sin(th + 2.4 - 0.9)), 2);       // …puis rebondissent en s'écartant (l'onde repart vers l'extérieur)
+    bo.rotateX(-a * w); const wing = Math.sin(th + 2.4), op = Math.max(0, -wing), cl = Math.pow(Math.max(0, wing), 3);   // battement d'ailes : ouverture ample, fermeture sèche l'une contre l'autre
+    bo.rotateZ(-sg * (clap || 0) * 0.3 * rb * acc * w);
+    // choc du claquement : au moment du contact, une impulsion part dans la chair — le ressort la fait onduler puis s'éteindre tout seul,
+    // comme une vraie onde de choc (c'est ce qui manquait pour que le « clap » ne soit pas qu'une rotation)
+    const st = _bbS[n] || (_bbS[n] = { was: 0 });
+    if (c > 0.85 && st.was <= 0.85 && clap) { const j = jig.find((x) => x.bone === bo); if (j) { j.vel.x += -sg * 0.22 * acc * w; j.vel.y += 0.10 * acc * w; } }
+    st.was = c;
+    if (sg > 0) { const wing = Math.sin(th + 2.4); gluteMorph(Math.min(1.7, (0.35 * fx + WING * Math.max(0, -wing)) * acc * w + 0.35 * fx * (1 - w)), Math.pow(Math.max(0, wing), 3) * acc * w); }   // battement d'ailes : ouverture ample, fermeture sèche
+    bo.scale.x *= 1 - 0.05 * c * w; bo.scale.y *= 1 + 0.03 * c * w;      // au contact, la chair se comprime légèrement puis reprend sa forme
   }
 }
 
@@ -500,10 +840,10 @@ function romApply(dt) {
     _rs.copy(_rq).multiply(_rt.clone().invert());                         // bascule = rotation sans la torsion
     let hit = false;
     let ta = 2 * Math.acos(Math.min(1, Math.abs(_rt.w)));
-    if (ta > r.tw) { const k = r.tw / ta; _rt.slerpQuaternions(new THREE.Quaternion(), _rt, k); hit = true; }
+    if (ta > r.tw) { const k = r.tw / ta; _rt.copy(new THREE.Quaternion().slerp(_rt, k)); hit = true; }
     if (_rs.w < 0) _rs.set(-_rs.x, -_rs.y, -_rs.z, -_rs.w);
     const sa = 2 * Math.acos(Math.min(1, _rs.w));
-    if (sa > r.sw) { _rs.slerpQuaternions(new THREE.Quaternion(), _rs, r.sw / sa); hit = true; }
+    if (sa > r.sw) { _rs.copy(new THREE.Quaternion().slerp(_rs, r.sw / sa)); hit = true; }
     if (r.foot) {                                                         // un pied ne pivote pas instantanément (défauts de capture lissés)
       if (r.prev && dt > 0) { const a = r.prev.angleTo(r.bo.quaternion), mx = 12 * Math.min(dt, 0.1); if (a > mx) { r.bo.quaternion.copy(r.prev).rotateTowards(r.bo.quaternion, mx); romHits++; } }
       (r.prev || (r.prev = new THREE.Quaternion())).copy(r.bo.quaternion);
@@ -512,8 +852,8 @@ function romApply(dt) {
 }
 /* ── Mouvement secondaire : poitrine et fessier suivent l'inertie du corps (ressort amorti), sans jamais exagérer ── */
 const JIG_DEF = [   // os, raideur, amortissement, limite (m), gain
-  ['LeftBreast', 160, 6.5, 0.036, 2.3], ['RightBreast', 160, 6.5, 0.036, 2.3],
-  ['LeftButtock', 220, 9, 0.022, 1.7], ['RightButtock', 220, 9, 0.022, 1.7],
+  ['LeftBreast', 125, 5.6, 0.044, 2.6], ['RightBreast', 125, 5.6, 0.044, 2.6],   // poitrine lourde : balancement plus ample et plus lent, qui s'amortit en douceur
+  ['LeftButtock', 165, 7.2, 0.032, 2.1], ['RightButtock', 165, 7.2, 0.032, 2.1],   // chair plus souple : l'onde se propage et s'amortit, au lieu d'un petit tremblement sec
 ];
 const jig = [];
 const _jw = new THREE.Vector3(), _jv = new THREE.Vector3(), _ja = new THREE.Vector3(), _jq = new THREE.Quaternion(), _jd = new THREE.Vector3(), _jn = new THREE.Vector3(), _jr = new THREE.Quaternion();
@@ -526,9 +866,10 @@ function jigSetup(root) {
     const len = child ? Math.max(0.05, child.position.length()) : 0.1;
     jig.push({ bone, rest: bone.quaternion.clone(), len, k, c, lim, g, prev: null, pv: new THREE.Vector3(), off: new THREE.Vector3(), vel: new THREE.Vector3(),
       dir: new THREE.Vector3(0, 1, 0).applyQuaternion(bone.quaternion).normalize(),
-      sag: /Breast/.test(n) ? 0.05 : 0.022, g0: null, sagOff: new THREE.Vector3() });
+      sag: /Breast/.test(n) ? 0.05 : 0.022, g0: null, sagOff: new THREE.Vector3(), butt: /Buttock/.test(n), S: /^Left/.test(n) ? 'L' : 'R', sg: /^Left/.test(n) ? 1 : -1, mf: 0, ma: 0 });
   }
 }
+const _js2 = new THREE.Vector3();
 function jigUpdate(dt) {
   if (!jig.length || dt <= 0) return;
   let spdSum = 0, spdN = 0;
@@ -548,16 +889,30 @@ function jigUpdate(dt) {
     if (!j.g0) j.g0 = _jn.clone();                         // première image : debout, forme de référence
     _jn.sub(j.g0); _jn.addScaledVector(j.dir, -_jn.dot(j.dir));
     j.sagOff.lerp(_jn.multiplyScalar(j.sag * 0.5), Math.min(1, dt * 6));
+    for (let qi = IMPACT.q.length - 1; qi >= 0; qi--) { const im = IMPACT.q[qi];
+      if (im.pat.test(j.bone.name)) { j.vel.add(_js2.copy(im.v).applyQuaternion(_jq)); IMPACT.q.splice(qi, 1); } }   // le choc entre dans la chair (impulsion locale)
+    let sup = 0;                                                             // la main qui PORTE : chair soulevée, rebond amorti (mesuré : un sein soutenu remonte de ~1 cm et ne ballotte plus)
+    if (/Breast/.test(j.bone.name)) { sup = SUPPORT[j.bone.name.startsWith('Left') ? 'l' : 'r'] || 0;
+      if (sup > 0.02) { _js2.set(0, 1, 0).applyQuaternion(_jq); j.sagOff.multiplyScalar(1 - 0.75 * sup).addScaledVector(_js2, 0.008 * sup); } }   // ~1,2 cm au bout du sein (bras de levier : l'offset est un angle au pivot)
     _ja.applyQuaternion(_jq).multiplyScalar(-j.g * jigGainMul);   // l'inertie tire dans le sens opposé, dosée selon l'énergie du mouvement
     const n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n;
     for (let i = 0; i < n; i++) {                         // intégration semi-implicite, stable
-      j.vel.addScaledVector(_ja, h).addScaledVector(_jw.copy(j.off).sub(j.sagOff), -j.k * h).addScaledVector(j.vel, -j.c * h);
+      j.vel.addScaledVector(_ja, h).addScaledVector(_jw.copy(j.off).sub(j.sagOff), -j.k * h).addScaledVector(j.vel, -j.c * (1 + 2.5 * sup) * h);
       j.off.addScaledVector(j.vel, h);
     }
     _jw.copy(j.off).sub(j.sagOff); if (_jw.length() > j.lim) { j.off.copy(j.sagOff).add(_jw.setLength(j.lim)); j.vel.multiplyScalar(0.5); }
     _jd.copy(j.dir).multiplyScalar(j.len).add(j.off).normalize();
     _jr.setFromUnitVectors(j.dir, _jd);
     j.bone.quaternion.premultiply(_jr);
+    // Muscle fessier : quand la cuisse fléchit (accroupie, penchée, à quatre pattes), il s'étire — la fesse s'aplatit un peu, s'élargit,
+    // et le sillon s'ouvre naturellement ; jambe tendue, elle retrouve son galbe. Transition douce, jamais brusque.
+    if (j.butt) {
+      const w = (typeof CORR !== 'undefined' && CORR.w && CORR.w[j.S]) || null, G = window.__gm ?? 1;
+      j.mf += ((w ? w.f : 0) - j.mf) * Math.min(1, dt * 8); j.ma += ((w ? w.a : 0) - j.ma) * Math.min(1, dt * 8);
+      const f = j.mf * G, a = j.ma * G;
+      j.bone.scale.set(1 + 0.05 * f, 1 - 0.09 * f, 1 + 0.05 * f);
+      j.bone.rotateZ(j.sg * (0.15 * f + 0.06 * a));
+    }
   }
   // au repos, rebond discret ; en plein mouvement vif (danse, course), plus présent — doux dans les deux cas
   if (spdN) { const avg = spdSum / spdN; jigGainMul += (Math.min(1.6, 0.72 + avg * 0.7) - jigGainMul) * Math.min(1, dt * 3); }

@@ -164,7 +164,7 @@ $('#chat-form').addEventListener('submit', async (e) => {
   }
   setThinking(true);
   const started = Date.now();
-  const viaClaude = !!cap.sample || ownOk || DIRECT;
+  const viaClaude = !!cap.sample || ownOk || DIRECT || brainNet;
   const wasOk = backendOk || backendSeen || viaClaude;
   let line = null;                          // ligne du journal remplie au fil de l'eau
   let r;

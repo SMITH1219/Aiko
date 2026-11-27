@@ -1,6 +1,6 @@
 window.AIKO_STARTED = true;
 // Bibliothèques 3D livrées avec la page (plus de dépendance à un site extérieur)
-import { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils, VRMHumanoid, MeshoptDecoder, RoomEnvironment } from './aiko-3d.js';
+import { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils, VRMHumanoid, MeshoptDecoder, RoomEnvironment, MeshBVH } from './aiko-3d.js';
 
 /* ================= CONFIGURATION ================= */
 // Ton propre modèle : dépose-le à cet emplacement. '' = toujours le modèle de démo pixiv.
@@ -54,6 +54,10 @@ function engineList() {
   const c = directCfg(), L = [];
   const custom = !(c.url === DIRECT_DEFAULT.url && !c.key && c.model === DIRECT_DEFAULT.model);
   if (custom) L.push({ id: 'perso', name: 'Ton moteur (' + (c.model || '?') + ')', url: c.url, model: c.model, key: c.key, pref: true });
+  let extra = []; try { extra = JSON.parse(localStorage.getItem('aiko.engines')) || []; } catch (_) {}   // moteurs supplémentaires (🧠) : Lexa les essaie TOUS, notés sur leurs vrais résultats
+  extra.forEach((x, i) => { if (x && x.url) L.push({ id: 'x' + i + '-' + String(x.model || '').slice(0, 24), name: (x.name || 'Moteur') + ' (' + (x.model || '?') + ')', url: x.url, model: x.model, key: x.key || '' }); });
+  let pk = ''; try { pk = localStorage.getItem('aiko.polkey') || ''; } catch (_) {}
+  if (pk) for (const m of ['openai-fast', 'mistral', 'gemini-fast']) L.push({ id: 'polgen-' + m, name: 'Pollinations · ' + m + ' (ta clé)', url: 'https://gen.pollinations.ai/v1', model: m, key: pk });   // nouvelle adresse officielle : clé gratuite requise (pk_…)
   L.push({ id: 'pol-openai', name: 'Pollinations · openai', url: DIRECT_DEFAULT.url, model: 'openai', key: '' });
   L.push({ id: 'pol-mistral', name: 'Pollinations · mistral', url: DIRECT_DEFAULT.url, model: 'mistral', key: '' });
   L.push({ id: 'pol-get', name: 'Pollinations · secours', get: true });
@@ -131,6 +135,25 @@ async function ownSample(msgs, opts) {
   const j = await res.json(); const text = String(j.text || '');
   if (opts && opts.onText) opts.onText({ text });
   return { text };
+}
+/* Son cerveau : Claude d'abord quand il est là (dans l'app Claude) ; s'il échoue, sature ou refuse, elle continue AUTOMATIQUEMENT avec ses
+   moteurs internet (même routage noté que hors de Claude) — elle ne dépend pas que de Claude. Hors de Claude : son serveur ou ses moteurs. */
+let brainNet = false;   // vrai dès que Claude a échoué ou refusé : tout son cerveau passe alors par ses moteurs internet
+async function brainSample(msgs, opts) {
+  if (typeof cap !== 'undefined' && cap.sample && !window.__noClaude) {
+    try { return await cap.sample(msgs, opts); }
+    catch (e) {
+      const code = e && e.code;
+      if (code === 'not_granted') { cap.sample = null; try { setStatus(); } catch (_) {} }
+      if (window.__noFallback) throw e;
+      brainNet = true;
+      try { showToast('Claude ne répond pas : je continue avec mes moteurs internet'); } catch (_) {}
+      try { const out = await directSample(msgs, opts); out.via = 'internet'; return out; }
+      catch (e2) { const er = new Error('Claude (' + (code || (e && e.message) || 'erreur') + ') puis mes moteurs internet : ' + ((e2 && e2.message) || e2)); throw er; }
+    }
+  }
+  if (brainNet && !DIRECT) return directSample(msgs, opts);   // Claude refusé plus tôt : directement ses moteurs internet (pas un serveur absent)
+  return ownSample(msgs, opts);
 }
 const LIFE_POLL_MS = 30000;   // fréquence à laquelle la page demande « as-tu quelque chose à dire ? »
 const TIMEOUT = { brain: 25000, brainUnknown: 6000, speak: 15000, health: 4000 };

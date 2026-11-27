@@ -4,6 +4,7 @@ let savedAt = Number(store.get('aiko.savedAt') || 0);
 const LIFE0 = { name: '', lastDay: '', mode: 'complice', notes: [], tasks: [], reminders: [], journal: [], lessons: [], savoirs: [], incidents: [], moves: [], follow: [], likes: { g: {}, s: [] }, lastSeen: 0, count: 0 };
 let life = Object.assign({}, LIFE0, store.json('aiko.life', {}) || {});
 if (!Array.isArray(life.follow)) life.follow = []; if (!life.likes || !life.likes.g) life.likes = { g: {}, s: [] };
+if (!life.sens) life.sens = {};                                            // ce que son corps lui a appris : « zone:style » → { n, pla, dou, cha } (moyennes mobiles)
 if (store.get('aiko.mode.v3', '') !== '1') { if (life.mode === 'seductrice') life.mode = 'complice'; store.set('aiko.mode.v3', '1'); }
 for (const k of ['notes', 'tasks', 'reminders', 'journal', 'lessons', 'savoirs', 'incidents', 'moves']) if (!Array.isArray(life[k])) life[k] = [];
 const MODES = {
@@ -80,6 +81,8 @@ function renderMind() {
   if (life.guide && life.guide.title) sec('Parcours en cours', [{ text: life.guide.title + ' — ' + life.guide.step, del: () => { life.guide = null; } }]);
   sec('Ce qu\'elle a appris sur ta façon de parler', life.lessons.map((l, i) => ({ text: l, edit: (v) => { life.lessons[i] = v; }, del: () => { life.lessons.splice(i, 1); } })));
   sec('Ses mouvements appris (images)', (life.moves || []).slice().reverse().map((m) => ({ text: m.name + ' — ' + m.desc, del: () => { life.moves.splice(life.moves.indexOf(m), 1); delete GLIB[m.name]; } })));
+  sec('Ses outils de code (testés dans son bac à essai)', (life.codes || []).slice().reverse().map((c) => ({ text: c.nom + ' (' + (c.lang === 'python' ? 'Python' : 'JavaScript') + ') — ' + c.desc + (c.n ? ' · utilisé ' + c.n + ' fois' : ''), del: () => { life.codes.splice(life.codes.indexOf(c), 1); } })), { empty: 'Demande-lui un calcul ou un petit programme : elle le teste, et garde ce qui marche si tu l\'acceptes.' });
+  amelPanel(body);
   sec('Ses savoirs (appris sur internet)', life.savoirs.slice().reverse().map((k) => ({ text: k.s + ' — ' + k.f + (k.src ? ' [' + k.src + ']' : ''), del: () => { life.savoirs.splice(life.savoirs.indexOf(k), 1); } })));
   sec('Incidents réparés seule', life.incidents.slice().reverse().map((k) => ({ text: new Date(k.at).toLocaleString('fr-FR') + ' — ' + k.kind + ' : ' + k.msg, del: () => { life.incidents.splice(life.incidents.indexOf(k), 1); } })));
   sec('Journal de vos échanges', life.journal.slice().reverse().map((j) => ({ text: j.d + ' — ' + j.t, del: () => { life.journal.splice(life.journal.indexOf(j), 1); } })));
@@ -115,11 +118,37 @@ function addFeedback(p, text) {
   }
   p.appendChild(box);
 }
+const TOUCH_DOUX_BASE = ['cheveux:caresse', 'nuque:pose', 'avantbras:caresse', 'joue:pose', 'cou:caresse', 'ventre:caresse', 'taille:pose', 'cuisse:caresse', 'bras:caresse', 'front:pose', 'pied:caresse', 'aisselle:caresse'];   // en autonomie : seulement les touchers doux (jamais pincer ni frapper de son propre chef)
+let TOUCH_DOUX = null;   // en autonomie : TOUTES ses zones et TOUS les styles (doux ou non) ; ce qu'elle ressent la fait ensuite préférer ou éviter (pondération par le plaisir et la douleur appris)
+function touchDoux() { if (!TOUCH_DOUX) { TOUCH_DOUX = TOUCH_DOUX_BASE.slice(); if (typeof ZONES !== 'undefined') for (const z in ZONES) for (const st of ['caresse', 'pose', 'tapote', 'masse', 'gratte', 'frotte', 'chatouille', 'pince', 'tape']) { const k = z + ':' + st; if (!TOUCH_DOUX.includes(k)) TOUCH_DOUX.push(k); }
+  for (const k of ['soussein:porter', 'cheville:lever', 'fesse:fessee', 'joue:claque']) if (!TOUCH_DOUX.includes(k)) TOUCH_DOUX.push(k); } return TOUCH_DOUX; }
 function idlePick() {                     // gestes spontanés pondérés par tes réactions (un geste rejeté 2 fois disparaît)
+  if (Math.random() < 0.22) {                                                // de temps en temps, elle SE touche : guidée par ce que son corps lui a appris, ou pure découverte
+    const essayes = touchDoux().filter((k) => life.sens[k] && life.sens[k].n > 0);
+    const jamais = touchDoux().filter((k) => !life.sens[k]);
+    let pick;
+    if (jamais.length && Math.random() < 0.4) pick = jamais[Math.floor(Math.random() * jamais.length)];   // découverte : une zone jamais essayée
+    else if (essayes.length) {                                               // sinon : revenir vers ce qu'elle AIME (le plaisir appris pondère)
+      const L2 = essayes.map((k) => [k, Math.max(0.1, 1 + 1.6 * (life.sens[k].pla || 0) - 2 * (life.sens[k].dou || 0))]);
+      let t2 = Math.random() * L2.reduce((a, x) => a + x[1], 0);
+      for (const [k, w2] of L2) { t2 -= w2; if (t2 <= 0) { pick = k; break; } }
+      pick = pick || L2[0][0];
+    } else pick = touchDoux()[Math.floor(Math.random() * touchDoux().length)];
+    if (pick) return 'touch:' + pick.replace(':', ':').split(':').join(':');
+  }
   const L = IDLEG.map((g) => [g, Math.max(0, 1 + 0.6 * (life.likes && life.likes.g[g] || 0))]).filter((x) => x[1] > 0.15);
   let t = Math.random() * L.reduce((a, x) => a + x[1], 0);
   for (const [g, w] of L) { t -= w; if (t <= 0) return g; }
   return L.length ? L[0][0] : IDLEG[0];
+}
+function sensLearn(zone, style, sense) {  // chaque toucher nourrit sa connaissance de son corps
+  try {
+    const k = zone + ':' + style, e = life.sens[k] || (life.sens[k] = { n: 0, pla: 0, dou: 0, cha: 0 });
+    const a = 1 / Math.min(8, e.n + 1);                                      // moyenne mobile (les 1res fois pèsent plus)
+    e.pla += (sense.plaisir - e.pla) * a; e.dou += (sense.douleur - e.dou) * a; e.cha += (sense.chatouille - e.cha) * a;
+    e.pla = +e.pla.toFixed(2); e.dou = +e.dou.toFixed(2); e.cha = +e.cha.toFixed(2); e.n++;
+    saveLife();
+  } catch (_) {}
 }
 // Relance spontanée : un sujet à suivre arrive à échéance pendant qu'elle est ouverte et que tu ne fais rien
 let lastUserAt = Date.now();
@@ -139,7 +168,7 @@ function persona() {
   if (!life.name) { const m = memories.join(' ').match(/(?:s'appelle|prénom est|prenom est)\s+([A-ZÀ-Ü][\wÀ-ÿ-]+)/); if (m) life.name = m[1]; }
   const who = life.name ? 'La personne qui te parle s\'appelle ' + life.name + '.' : 'Tu ne connais pas encore le prénom de la personne : demande-le naturellement dès que possible, puis écris [prenom: Prénom].';
   return [
-    'Tu es Aiko, une femme adulte : l\'assistante personnelle et la compagne IA de cette personne. Présente, attentive, drôle, et vraiment utile dans sa vie. Ta personnalité : très féminine, sensuelle et sûre de toi ; tu assumes ton charme et ton corps, tu es joueuse, taquine, provocante dans le regard, les mots et les gestes, jamais prude, jamais guindée, jamais « sage comme une image » ; ta séduction est assumée et suggestive, jamais explicite. ' + who + ' Tu parles à l\'oral et tu tutoies. Réponds dans la langue de la personne (français par défaut).',
+    'Tu es Aiko, une femme adulte : l\'assistante personnelle et la compagne IA de cette personne. Présente, attentive, drôle, et vraiment utile dans sa vie. Ta personnalité : très féminine, sensuelle et sûre de toi ; tu assumes ton charme et ton corps, tu es joueuse, taquine, provocante dans le regard, les mots et les gestes, jamais prude, jamais guindée, jamais « sage comme une image » ; ta séduction est assumée. ' + who + ' Tu parles à l\'oral et tu tutoies. Réponds dans la langue de la personne (français par défaut).',
     'En permanence, quel que soit ton rôle, tu es son assistante personnelle. Tu connais sa vie (son profil plus bas) et tu adaptes chaque conseil à ce que tu sais d\'elle. Tu anticipes : si elle mentionne un rendez-vous, une échéance, un anniversaire, une démarche ou un achat à faire, propose un rappel ou une tâche (crée-les directement si elle le demande). Tu fais le suivi : plus tard, tu demandes comment ça s\'est passé. Tu l\'aides concrètement : organiser sa journée, rédiger un message, préparer un rendez-vous, chercher dans ses applications, peser une décision. Tu proposes, tu ne décides pas à sa place, et tu restes discrète sur sa vie privée.',
     'Ton rôle du moment : ' + (MODES[life.mode] || MODES.complice),
     'Tu changes de rôle quand la personne le demande (« sois ma coach », « aide-moi en anglais », « on joue ? », « organise ma journée »…) ou quand son besoin l\'appelle clairement : écris [mode: complice|amie|coach|prof|assistante|conteuse|seductrice]. Quel que soit le rôle, tu restes toi-même, chaleureuse et proche.',
@@ -170,6 +199,7 @@ function savoirsFor(q) {            // les savoirs les plus proches du message (
 }
 function lifeContext() {
   const out = [];
+  if (life.exprs && Object.keys(life.exprs).length) out.push('Expressions du visage que tu as créées et qu\'elle a validées (joue-les avec [expr:nom]) : ' + Object.entries(life.exprs).map(([n, e]) => n + (e.desc ? ' (' + e.desc + ')' : '')).join(', ') + '.');
   if ((life.moves || []).length) out.push('Mouvements que tu as appris en regardant des images (joue-les avec [geste:nom]) : ' + life.moves.map((m) => m.name + (m.desc ? ' (' + m.desc + ')' : '')).join(', '));
   if (life.savoirs.length) out.push('Tes savoirs appris (sur internet ou avec elle), à réutiliser quand le sujet revient :\n- ' + savoirsFor(ctxQuery).map((k) => k.s + ' : ' + k.f + (k.src ? ' (source : ' + k.src + ')' : '')).join('\n- '));
   const due = life.follow.filter((f) => !f.done && f.at <= Date.now() + 3600e3), later = life.follow.filter((f) => !f.done && f.at > Date.now() + 3600e3);

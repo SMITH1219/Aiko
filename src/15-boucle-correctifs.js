@@ -51,12 +51,14 @@ function correctivesUpdate() {
     const abd = Math.atan2(Math.abs(v.dot(CORR.lat)), Math.max(0.05, Math.hypot(dn, v.dot(CORR.fwd))));   // ouverture = écart à l'axe du corps (indépendant du sens de l'axe)
     const flex = Math.atan2(Math.max(0, v.dot(CORR.fwd)), Math.max(0.05, Math.hypot(dn, v.dot(CORR.lat))));
     const wa = Math.min(1.15, abd / CORR_T.abd), wf = Math.min(1.15, flex / CORR_T.flex);
+    (CORR.w || (CORR.w = {}))[S] = { a: Math.min(1, wa), f: Math.min(1, wf) };   // ouverture et flexion de la cuisse : servent aussi aux muscles fessiers
     for (const m of CORR.meshes) { const d = m.morphTargetDictionary, inf = m.morphTargetInfluences;
       if (d['corr_' + S + '_abd'] !== undefined) inf[d['corr_' + S + '_abd']] = wa * wa * (3 - 2 * Math.min(1, wa)) ;
       if (d['corr_' + S + '_flex'] !== undefined) inf[d['corr_' + S + '_flex']] = wf * wf * (3 - 2 * Math.min(1, wf)); }
   }
 }
 const HEAL = { n: 0, t0: 0, last: 0, check: 0 };
+let _srDone = false;                                                          // une main a-t-elle été posée cette image ? (pour recopier le rig vers le squelette affiché)
 function selfRepair(kind, err) {
   const now = Date.now();
   try { gst = null; } catch (_) {}
@@ -89,12 +91,25 @@ function adaptRes() {
 window.__aq = AQ;
 function animate() {
   requestAnimationFrame(animate);
+  if (window.__freeze) return;                                               // épreuves : la boucle vit au pas manuel SEULEMENT (sinon le temps file entre une mesure et sa photo — vu : toutes les photos montraient ~1 s plus tard que leurs chiffres)
   try { adaptRes(); } catch (_) {}
   try { animateFrame(); } catch (e) { selfRepair('animation', e); }
   if (tNow - HEAL.check > 1) { HEAL.check = tNow; try { healthCheck(); } catch (_) {} }
 }
+/* ══ MESURE DES PERFORMANCES : images/s et temps par module, à afficher sur TON appareil (Réglages → « Mesurer la fluidité », ou #fps dans l'adresse) ══ */
+const PERF = { on: /[#&]fps\b/.test(location.hash), cur: { tot: 0, surf: 0, nsurf: 0, mains: 0, toucher: 0, chair: 0, rendu: 0, n: 0 }, t0: performance.now(), el: null, last: null };
+function perfTick() {
+  const now = performance.now(), el = now - PERF.t0; if (el < 1000) return;
+  const c = PERF.cur, n = Math.max(1, c.n), r = (x) => (x / n).toFixed(1);
+  PERF.last = { fps: +(c.n * 1000 / el).toFixed(1), image_ms: +(c.tot / n).toFixed(2), surface_ms: +(c.surf / n).toFixed(2), surface_par_image: +(c.nsurf / n).toFixed(1), mains_ms: +(c.mains / n).toFixed(2), toucher_ms: +(c.toucher / n).toFixed(2), chair_ms: +(c.chair / n).toFixed(2), rendu_ms: +(c.rendu / n).toFixed(2) };
+  if (PERF.on) { if (!PERF.el) { PERF.el = document.createElement('div'); PERF.el.id = 'perf'; PERF.el.style.cssText = 'position:fixed;left:6px;top:6px;z-index:9999;background:rgba(0,0,0,.72);color:#9f9;font:11px/1.35 ui-monospace,monospace;padding:5px 7px;border-radius:6px;pointer-events:none;white-space:pre'; document.body.appendChild(PERF.el); }
+    const L = PERF.last; PERF.el.textContent = L.fps + ' i/s   image ' + L.image_ms + ' ms\nsurface ' + L.surface_ms + ' (' + L.surface_par_image + '×)  mains ' + L.mains_ms + '\ntoucher ' + L.toucher_ms + '  chair ' + L.chair_ms + '  rendu ' + L.rendu_ms; }
+  else if (PERF.el) { PERF.el.remove(); PERF.el = null; }
+  for (const k in c) c[k] = 0; PERF.t0 = now;
+}
 function animateFrame() {
-  const dt = window.__dt || Math.min(clock.getDelta(), 0.05); _simDt = dt;   // __dt : pas fixe pour les tests (simule 60 i/s sur une machine lente)
+  const _pf0 = performance.now();
+  const dt = window.__dt || Math.min(clock.getDelta(), 0.05); _simDt = dt; SURF.dirty = true; TOUCHW.l = TOUCHW.r = 0; SUPPORT.l = SUPPORT.r = 0;   // __dt : pas fixe pour les tests (simule 60 i/s sur une machine lente)
   tNow += dt;
   if (vrm) {
     const b = bones;
@@ -133,10 +148,10 @@ function animateFrame() {
     const ew = emotion ? Math.min(1, emotionW * 1.8) : 0;
     const eSad = emotion === 'sad' ? ew : 0, eSur = emotion === 'surprised' ? ew : 0, eHap = emotion === 'happy' ? ew : 0, eAng = emotion === 'angry' ? ew : 0;
     // gestes enchaînés demandés par le cerveau
-    if (!gst && gQueue.length) playGesture(gQueue.shift());
+    if (!gst && gQueue.length && !window.__nogest) playGesture(gQueue.shift());
     // ses mains parlent avec elle : un geste d'accompagnement toutes les 2 à 4 s tant qu'elle parle
     talkNext -= dt;
-    if (mouthOn && !gst && !thinking && !document.hidden && poseCur.lie < 0.5) {
+    if (mouthOn && !gst && !thinking && !document.hidden && poseCur.lie < 0.5 && !window.__nogest) {
       if (talkNext <= 0) {
         talkNext = 1.6 + Math.random() * 2.4 - (emotion === 'happy' ? 0.5 : 0) + (emotion === 'sad' ? 1.2 : 0);
         let g; do { g = TALKG[Math.floor(Math.random() * TALKG.length)]; } while (g === lastTalkG && TALKG.length > 1);
@@ -146,7 +161,7 @@ function animateFrame() {
     // elle bouge d'elle-même quand rien ne se passe (petits gestes réguliers, comme quelqu'un qui attend)
     if (LESSON.on) idleNext = Math.max(idleNext, 3);
     idleNext -= dt;
-    if (idleNext <= 0) { idleNext = 3 + Math.random() * 5; if (!gst && !mouthOn && !thinking && !document.hidden) { playGesture(idlePick()); } }
+    if (idleNext <= 0) { idleNext = 3 + Math.random() * 5; if (!gst && !mouthOn && !thinking && !document.hidden && !window.__nogest) { playGesture(idlePick()); } }
     const shy = up * (gn === 'shy' ? ge : 0), flt = up * (gn === 'flirt' ? ge : 0), hr = up * (1 - poseCur.sit * 0.3) * (gn === 'hair' ? ge : 0);
     const gSpX = up * ((gn === 'lean' ? 0.15 * ge : 0) + 0.05 * shy - 0.03 * flt + (lS ? lS[0] * lw : 0) + (gn === 'laugh' ? ge * (-0.05 + 0.03 * Math.sin(gt * 15)) : 0) + 0.05 * eSad - 0.045 * eSur + 0.02 * eAng);
     const swayT = gn === 'sway' ? Math.sin(gt * 2.3) : 0;              // « sway » : elle balance les hanches, en rythme
@@ -156,7 +171,8 @@ function animateFrame() {
     const legG = lib && lib.legs ? lw : 0;                                 // pendant ce geste, la posture debout (déhanché, poids, ondulation) s'efface
     const nat = vrm.isGlb ? up * (1 - poseCur.sit) * (1 - legG) : 0;
     const gSpZ = -0.10 * nat * sideCur;
-    if (b.neck) b.neck.rotation.set(0, 0, 0);   // le cou repart de zéro à chaque image (sinon les gestes s'accumulent)
+    if (b.neck) b.neck.rotation.set(0, 0, 0);
+    if (b.uChest) b.uChest.rotation.set(0, 0, 0);   // haut du dos : quatrième segment de la colonne, utilisé par les danses pour une vraie ondulation   // le cou repart de zéro à chaque image (sinon les gestes s'accumulent)
     if (b.spine) { b.spine.rotation.x = 0.024 * breath + gSpX; b.spine.rotation.z = 0.016 * swyX + gSpZ + (lS ? lS[1] * lw : 0); }
     for (const x of [b.lArm, b.rArm, b.lLowArm, b.rLowArm, b.lHand, b.rHand]) if (x) x.rotation.set(0, 0, 0);   // repart de zéro (la cinématique inverse a pu tout changer)
     // avant-bras : légèrement pliés au repos, ils se lèvent et bougent quand elle parle
@@ -201,9 +217,11 @@ function animateFrame() {
     rig.rotation.set(-Math.PI / 2 * poseCur.lie, poseCur.turn + Math.PI / 2 * poseCur.lie, 0);
     const heel = (wr.on && /^pieds_talons/.test(wr.on.pieds || '') ? 1 : 0) * (1 - poseCur.lie);
     heelCur += (heel - heelCur) * Math.min(1, dt * 6);
-    rig.position.set(body.height / 2 * poseCur.lie, (BED_H + 0.1) * poseCur.lie + HEEL_LIFT * heelCur * (1 - poseCur.sit), 0);
-    for (const f of [b.lFoot, b.rFoot]) if (f) f.rotation.x = HEEL_FOOT * heelCur;
-    for (const f of [b.lToes, b.rToes]) if (f) f.rotation.x = -HEEL_FOOT * 0.9 * heelCur;
+    rig.position.set(body.height / 2 * poseCur.lie + WORLD.x, (BED_H + 0.1) * poseCur.lie + HEEL_LIFT * heelCur * (1 - poseCur.sit), WORLD.z);
+    for (const f of [b.lFoot, b.rFoot]) if (f) f.rotation.set(HEEL_FOOT * heelCur, 0, 0);   // TOUS les axes repartent de zéro à chaque image (avant : seul x l'était — une rotation y/z de geste s'ACCUMULAIT sans fin, vu : cuisse à 37 rad, bassin qui saute de 0,2 à 0,76 m)
+    for (const f of [b.lToes, b.rToes]) if (f) f.rotation.set(-HEEL_FOOT * 0.9 * heelCur, 0, 0);
+    for (const l of [b.lUpLeg, b.rUpLeg, b.lLowLeg, b.rLowLeg]) if (l) l.rotation.y = 0;
+    for (const l of [b.lLowLeg, b.rLowLeg]) if (l) l.rotation.z = 0;
     const legQ = poseCur.sit * Math.PI / 2 * body.legDir;
     const swK = 1 - freeW;    // posture porteuse : on neutralise le balancement du poids pour que les deux jambes soient symétriques
     const kL = 0.19 * nat * Math.max(0, sideCur) * body.legDir * swK, kR = 0.19 * nat * Math.max(0, -sideCur) * body.legDir * swK;   // genou libre plié, détendu
@@ -333,21 +351,33 @@ function animateFrame() {
     sacT -= dt;
     if (sacT <= 0) { sacT = 0.6 + Math.random() * 2.2; sacX = (Math.random() - 0.5) * 0.09; sacY = (Math.random() - 0.5) * 0.05; }
     lookAtTarget.position.set(mouse.x * 0.5 + gazeCX + sacX, mouse.y * 0.35 + gazeCY + sacY, 0);
-    if (lib && lw > 0) { applyFk(lib, gt, lw * (1 - poseCur.lie), b); if (lib.ground || (lib.legs && !AIRBORNE.test(gst.name))) groundBody(b, lw * (1 - poseCur.lie)); applyLib(lib, gt, lw * (1 - poseCur.lie), b); }
-    if (gst && gst.clip) { const cw = ge * (1 - poseCur.lie) * (1 - poseCur.sit); applyClip(gst, cw, b); if (!AIRBORNE.test(gst.name + ' ' + (gst.en || ''))) groundBody(b, cw); }   // danses et marches posées au sol (sauf vrais sauts)
+    { const _p = performance.now(); try { touchLiveUpdate(dt, b); } catch (e) { if (window.__tlErr) console.warn('toucher', e); } PERF.cur.toucher += performance.now() - _p; }   // réactions du corps AVANT les gestes : les mains se posent ensuite sur ce corps-là (sinon le bras bougeait sous la main posée)
+    if (lib && lw > 0) { applyFk(lib, gt, lw * (1 - poseCur.lie), b); if (lib.ground || (lib.legs && !AIRBORNE.test(gst.name))) groundBody(b, lw * (1 - poseCur.lie), false, !!lib.touch, !!lib.legPlace); applyLib(lib, gt, lw * (1 - poseCur.lie), b); }
+    if (gst && gst.clip) { const cw = ge * (1 - poseCur.lie) * (1 - poseCur.sit); applyClip(gst, cw, b);
+      if (clipAir(gst) === null) { if (!AIRBORNE.test(gst.name + ' ' + (gst.en || ''))) groundBody(b, cw); }   // ancien mouvement : posé au sol à chaque image (sauf vrais sauts)
+      else if (cw < 0.999) groundBody(b, 1);                               // début et fin (raccord avec la pose de repos) : posée au sol d'après la pose réellement affichée
+      else { rig.position.y += clipGy(gst); clipPelvis(gst, 1, b); rig.updateMatrixWorld(true); } }   // mouvement préparé : hauteur calculée d'avance (appuis au sol, vrais temps de vol), garde-fou, bassin ajusté
+    { // au repos aussi, le pied d'appui touche le sol : le déhanché de repos enfonçait la jambe d'appui de près de 3 cm dans le sol
+      const st = (1 - poseCur.sit) * (1 - poseCur.lie) * (1 - freeW), handled = (gst && gst.clip) || (lib && lw > 0 && (lib.ground || lib.legs));
+      if (st > 0.02 && !handled && !window.__noIdleGround) groundBody(b, st); }
     if (gst !== XF.last) { if (XF.last && gst && poseCur.lie < 0.3) xfadeStart(); XF.last = gst; if (!gst || !gst.clip) footLockReset(); }   // changement de geste : fondu depuis la pose réelle
     xfadeApply(b, dt);
-    if (gst && gst.clip && !AIRBORNE.test(gst.name + ' ' + (gst.en || '')) && poseCur.lie < 0.3 && poseCur.sit < 0.3) footLock(b, dt, ge); else footLockReset();
+    if (gst && gst.clip && gst.clip.fo) { if (poseCur.lie < 0.3 && poseCur.sit < 0.3) clipFeet(gst, ge, b); footLockReset(); }   // mouvement préparé : appuis connus d'avance
+    else if (gst && gst.clip && !AIRBORNE.test(gst.name + ' ' + (gst.en || '')) && poseCur.lie < 0.3 && poseCur.sit < 0.3) footLock(b, dt, ge); else footLockReset();
     // la caméra suit doucement le corps quand il se déplace (mouvement de la bibliothèque), puis revient au centre
-    { let fx = 0, fz = 0;
+    { // mouvement terminé, elle est au repos : la pièce se recentre sur elle d'un seul coup (invisible : caméra, sol et lumière la suivent déjà)
+      if (!gst && (WORLD.x || WORLD.z)) { camFollow.x -= WORLD.x; camFollow.z -= WORLD.z; rig.position.x -= WORLD.x; rig.position.z -= WORLD.z; WORLD.x = WORLD.z = 0; footLockReset(); for (const j of jig) j.prev = null; rig.updateMatrixWorld(true); }
+      let fx = WORLD.x, fz = WORLD.z;
       if (gst && gst.clip && gst.clip.dx && b.hips) { b.hips.getWorldPosition(_fv); fx = _fv.x; fz = _fv.z; }
       const k = Math.min(1, dt * 2.5); camFollow.x += (fx - camFollow.x) * k; camFollow.z += (fz - camFollow.z) * k;
-      target.x = camFollow.x; target.z = camFollow.z; }
+      target.x = camFollow.x; target.z = camFollow.z;
+      ground.position.x = WORLD.x; ground.position.z = WORLD.z;                      // le sol (ombre) et le soleil accompagnent son déplacement
+      sun.position.set(1.6 + WORLD.x, 3.2, 2.6 + WORLD.z); sun.target.position.set(WORLD.x, 0, WORLD.z); sun.target.updateMatrixWorld(); }
     try { propUpdate(lib && lw > 0 ? lib : null, gt, b); } catch (e) { console.warn('objet', e); }
     if (!window.__noKeepOut && poseCur.lie < 0.5) { try { armKeepOut(b); } catch (e) {} }
     if (SKIN.ok && !window.__noContact) {                // mains et avant-bras : posés sur la peau, jamais dedans
       rig.updateMatrixWorld(true); skinUpdate();
-      handContact(b.lArm, b.lLowArm, b.lHand); handContact(b.rArm, b.rLowArm, b.rHand);
+      if (TOUCHW.l < 0.5) handContact(b.lArm, b.lLowArm, b.lHand); if (TOUCHW.r < 0.5) handContact(b.rArm, b.rLowArm, b.rHand);
     }
     // plantage au sol : après la flexion, on abaisse tout le corps pour que le point le plus bas (pied ou genou) touche le sol
     if (fpd && body.anchL) {
@@ -362,13 +392,22 @@ function animateFrame() {
     try { xfadeCapture(b); } catch (_) {}
     if (bones.hips) { bones.hips.getWorldPosition(_jw); SQ.uHip.value.set(_jw.x, _jw.z); SQ.uSquash.value = window.__nosquash ? 0 : 1; }
     try { correctivesUpdate(); } catch (_) {}
-    vrm.update(dt);
-    jigUpdate(dt);
-    buttBounce();
+    { const _p = performance.now(); vrm.update(dt); jigUpdate(dt); buttBounce(); PERF.cur.chair += performance.now() - _p; }
+    const _pm = performance.now();
+    for (const hk of ['l', 'r']) { const q = SURFREQ[hk];                     // mains posées sur le corps : APRÈS la physique des chairs, sur la peau telle qu'elle est vraiment à cette image
+      (window.__srw = window.__srw || {})[hk] = q ? q.w : 0;
+      if (q && q.w > 0.02) { SURF.dirty = true; (window.__lastTg = window.__lastTg || {})[hk] = q.tg; handOnSurface(b, hk, q.up, q.lo, q.hand, q.w, q.pole, q.tip, q.tg, q.key, q.pref, q.ref, q.glide, q.fdir); if (!q.tip && q.w > 0.25) fingersToSurface(b, hk, q.w, dt); _srDone = true; }
+      else if (SLOCK[hk] || HGOAL[hk]) { SLOCK[hk] = null; HGOAL[hk] = null; }
+      SURFREQ[hk] = null; }
+    try { if (propGrasp(b, dt)) _srDone = true; } catch (e) { if (window.__tlErr) console.warn('prise', e); }   // objet tenu : doigts refermés sur sa vraie surface
+    if (lib && lw > 0.3 && lib.legFollow && gt > lib.legFollow.a + 0.3 && !window.__noGrasp) { const hk2 = lib.legFollow.hk; try { fingersToSurface(b, hk2, 1, dt, (p) => surfClosest(p, hk2 === 'l' ? 1 : 2, null, 0.12)); _srDone = true; } catch (_) {} }   // jambe portée : les doigts S'ENROULENT autour de la cheville (prise fermée, pouce en face)
+    PERF.cur.mains += performance.now() - _pm;
+    if (_srDone) { _srDone = false; try { vrm.humanoid.update(); if (vrm.nodeConstraintManager) vrm.nodeConstraintManager.update(); } catch (_) {} }   // CRUCIAL : vrm.update() a déjà copié le rig normalisé vers le vrai squelette AVANT nos corrections de main ; sans cette recopie, tout ce que la passe différée fait (paume, doigts) est calculé… et jamais affiché (bug vu : doigts raides à l'écran, mesures « parfaites » dans le vide)
   }
   try { autoCamUpdate(0); } catch (e) {}
   updateCamera();
-  renderer.render(scene, camera);
+  { const _p = performance.now(); if (!window.__norender) renderer.render(scene, camera); PERF.cur.rendu += performance.now() - _p; }   // __norender : épreuves de mouvement sans affichage (calcul seul, très rapide)
+  PERF.cur.tot += performance.now() - _pf0; PERF.cur.n++; perfTick();
 }
 
 loadClips();
@@ -376,3 +415,5 @@ loadLibIndex();
 setStatus();
 loadDefault();
 animate();
+
+{ const bf = document.getElementById('btn-fps'); if (bf) { bf.classList.toggle('on', PERF.on); bf.addEventListener('click', () => { PERF.on = !PERF.on; bf.classList.toggle('on', PERF.on); }); } }

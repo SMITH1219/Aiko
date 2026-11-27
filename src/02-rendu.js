@@ -23,7 +23,7 @@ stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 30);
-const hemi = new THREE.HemisphereLight(0xfff2e6, 0x6a5e56, 1.15);   // sol gris chaud : ombres naturelles, plus de rouge-brun dans les creux
+const hemi = new THREE.HemisphereLight(0xfff2e6, window.__gnd ?? 0x9c9a9e, 1.15); window.__hemi = hemi;   // sol gris neutre et clair : les creux (sous les fesses, genoux) ne virent plus au rouge sombre
 scene.add(hemi);
 
 const sun = new THREE.DirectionalLight(0xffffff, 1.7);
@@ -68,6 +68,7 @@ scene.add(camera);
 
 /* ---------- orbite / pointeur ---------- */
 const target = new THREE.Vector3(0, 1.18, 0);
+const WORLD = { x: 0, z: 0 };       // où elle se trouve réellement dans la pièce (déplacement réel des mouvements : elle avance vraiment, ses pieds ne glissent plus)
 const camFollow = { x: 0, z: 0 };   // suivi doux du corps quand elle se déplace
 const CAM = { yaw: 0, pitch: 0.05, dist: 2.4, pitchMin: -1.25, pitchMax: 1.45, min: 0.3, max: 12, px: 0, py: 0, frame: 0 };   // px/py : décalage (pan) ; frame : cadrage choisi au double-tap
 const mouse = new THREE.Vector2(0, 0);
