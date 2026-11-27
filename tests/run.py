@@ -79,6 +79,19 @@ async def main():
           const seg=up.filter((x,i)=>i&&x-up[i-1]<1.2).length, span=up.reduce((s,x,i)=>i&&x-up[i-1]<1.2?s+x-up[i-1]:s,0);
           window.__freeze=0; window.__dt=0; return JSON.stringify({langue:L, hz:+(seg/span).toFixed(2), bouchees:__T.GLIB.manger.eat.bites.length, coups:__T.GLIB.glace.eat.licks.length}); })()""")
         r=json.loads(r); ok('bouche : langue tirée, mastication ≈ 1,46 Hz (mesures humaines), 2 bouchées, 5 coups de langue',r['langue']>0.9 and 1.25<=r['hz']<=1.7 and r['bouchees']==2 and r['coups']==5,r)
+        # 10 lèvres closes sur p/b/m, formes de langue créées sans perdre celles d'origine, émotions FACS qui montent en douceur
+        r=json.loads(await pg.evaluate("""(()=>{ const pn=performance.now.bind(performance); window.__vt=pn(); performance.now=()=>window.__vt; window.__freeze=1; window.__dt=1/60;
+          let face=null, tg=null; __T.vrmRef().scene.traverse(o=>{ if(o.isMesh&&o.morphTargetDictionary){ if(o.morphTargetDictionary.mouthSmileLeft!==undefined&&!face) face=o; if(/tongue/i.test(o.name)) tg=o; } });
+          __T.lipPrep('Papa mange une pomme, maman boit.','local'); __T.mouthSet(true); __T.lipGo(); const L=__T.lipRef(), pp=[];
+          for(let f=0; f<200; f++){ window.__vt+=1000/60; __T.animateFrame(); const pos=(window.__vt-L.t0)/1000*L.rate; let k=0; while(k+1<L.starts.length&&L.starts[k+1]<=pos) k++;
+            if(L.seq[k][0]==='PP'){ (pp[k]=pp[k]||[]).push(face.morphTargetInfluences[face.morphTargetDictionary.viseme_PP]); } }
+          __T.mouthSet(false); const ferm=pp.filter(Boolean).map(a=>Math.max(...a));
+          __T.setEmotion('sad'); for(let f=0; f<80; f++){ window.__vt+=1000/60; __T.animateFrame(); } __T.setEmotion('happy'); const sm=[]; for(let f=0; f<36; f++){ window.__vt+=1000/60; __T.animateFrame(); if(f%6===5) sm.push(+face.morphTargetInfluences[face.morphTargetDictionary.mouthSmileLeft].toFixed(2)); }
+          performance.now=pn; window.__freeze=0; window.__dt=0;
+          return JSON.stringify({ferm, langue:Object.keys(tg.morphTargetDictionary), sourire:sm}); })()"""))
+        ok('lèvres closes sur chaque p/b/m (forme PP ≥ 0,95)',len(r['ferm'])>=6 and min(r['ferm'])>=0.95,r['ferm'])
+        ok('langue : formes créées (pointe, côtés) + formes d\'origine intactes',all(k in r['langue'] for k in ['tongueOut','viseme_DD','tongueTipUp','tongueLeft','tongueRight']),r['langue'])
+        ok('émotion : montée progressive (≈ 0,5 s pour un sourire), pas de saut',r['sourire'][0]<0.5 and r['sourire'][-1]>0.75 and all(b>=a-0.02 for a,b in zip(r['sourire'],r['sourire'][1:])),r['sourire'])
         ok('aucune erreur JS',not pg.errs,pg.errs); await pg.close(); await br.close()
 subprocess.run([sys.executable,os.path.join(ROOT,'build.py'),'--test'],check=True,stdout=subprocess.DEVNULL)
 srv=http.server.ThreadingHTTPServer(('localhost',PORT),functools.partial(type('Q',(http.server.SimpleHTTPRequestHandler,),{'log_message':lambda *a:None}),directory=ROOT))

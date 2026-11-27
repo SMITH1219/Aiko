@@ -157,7 +157,7 @@ async function brainSample(msgs, opts) {
 }
 const LIFE_POLL_MS = 30000;   // fréquence à laquelle la page demande « as-tu quelque chose à dire ? »
 const TIMEOUT = { brain: 25000, brainUnknown: 6000, speak: 15000, health: 4000 };
-const PRESETS = ['happy', 'angry', 'sad', 'surprised', 'relaxed', 'neutral'];
+const PRESETS = ['happy', 'angry', 'sad', 'surprised', 'relaxed', 'neutral', 'fear', 'disgust'];
 /* ================================================= */
 
 const $ = (s) => document.querySelector(s);

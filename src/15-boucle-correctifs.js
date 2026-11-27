@@ -331,7 +331,15 @@ function animateFrame() {
       const T = mouthOn ? lipTargets(tNow) : {};
       const k = Math.min(1, dt * 24);
       let any = 0;
-      for (const v of LIP_V) { lip.cur[v] += (((T[v] || 0) * gate) - lip.cur[v]) * k; any += lip.cur[v]; }
+      // p, b, m : les lèvres doivent se FERMER vraiment (la fermeture peut ne durer que quelques millisecondes ; un lissage ordinaire l'empêche
+      // d'aboutir — vu : la forme « PP » plafonnait à 0,6-0,8 pendant que « aa » restait à 0,3). Donc : la fermeture domine les autres formes,
+      // elle s'établit en une image, et le volume ne l'atténue pas (pendant l'occlusion d'un p ou d'un b la voix est justement silencieuse).
+      const clo = T.PP || 0;
+      for (const v of LIP_V) {
+        const lab = v === 'PP';
+        const tg = (T[v] || 0) * (lab ? 1 : gate) * (clo > 0.3 && !lab ? Math.max(0, 1 - clo * 1.6) : 1);
+        const kk = (lab && tg > lip.cur[v]) || (clo > 0.3 && !lab && tg < lip.cur[v]) ? Math.min(1, dt * 60) : k;
+        lip.cur[v] += (tg - lip.cur[v]) * kk; any += lip.cur[v]; }
       setVisemes();
       { const c = lip.cur, vow = c.aa + 0.6 * c.E + 0.5 * c.O + 0.3 * c.I + 0.3 * c.U;          // JALI : la mâchoire suit le VOLUME réel sur les voyelles (voix forte = bouche plus ouverte), les lèvres gardent leurs formes
         setExpr('jali', mouthOn && lipEnv && lipEnv.url === playerURL ? Math.min(0.3, vow * mouthV * 0.3) : 0); }
@@ -341,9 +349,11 @@ function animateFrame() {
     // émotion qui s'estompe
     if (emotion) {
       emotionW -= dt * (emotionW > 0.3 ? 0.22 : 0.006);     // pic, puis humeur de fond qui s'efface en ~45 s
+      emoT += dt;
       if (emotionW <= 0) { setExpr(emotion, 0); emotion = null; }
-      else setExpr(emotion, Math.min(1, emotionW * 1.8));
+      else setExpr(emotion, emoShown() * (1 + 0.045 * Math.sin(tNow * 2.7) + 0.025 * Math.sin(tNow * 6.1 + 1)));   // le sommet n'est jamais figé (irrégularité des expressions sincères)
     }
+    if (emoPrev) { emoPrevW -= dt / 0.55; if (emoPrevW <= 0 || emoPrev === emotion) { if (emoPrev !== emotion) setExpr(emoPrev, 0); emoPrev = null; } else setExpr(emoPrev, emoPrevW * emoPrevW); }   // fin d'expression en ~0,5 s
     // regard : vers la caméra, décalé par le pointeur (repère local de la caméra)
     gazeNext -= dt;
     if (gazeNext <= 0 && !mouthOn) {

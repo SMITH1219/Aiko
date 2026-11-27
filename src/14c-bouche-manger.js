@@ -103,13 +103,15 @@ function chewSeq(t0, n, side) {
   };
   // ── tirer la langue (espiègle) ──
   GLIB.langue = { dur: 3.4, head: [0.03, 0, 0.1], fk: [[0, {}], [3.4, {}]],
-    faceSeq: [[0, {}], [0.35, { langue: 0.2 }], [0.7, { langue: 1, miam: 0.5 }], [2.0, { langue: 1, miam: 0.6 }], [2.4, { langue: 0.1, miam: 0.7 }], [3.0, { miam: 0.3 }], [3.4, {}]] };
+    faceSeq: [[0, {}], [0.35, { langue: 0.2 }], [0.7, { langue: 1, miam: 0.5 }],
+      [0.95, { langue: 1, miam: 0.55, l_g: 0.85 }], [1.2, { langue: 1, miam: 0.6, l_d: 0.85 }], [1.45, { langue: 1, miam: 0.6, l_g: 0.85 }], [1.7, { langue: 1, miam: 0.6, l_d: 0.85 }],   // elle la remue d'un côté à l'autre, espiègle
+      [1.95, { langue: 1, miam: 0.6, l_haut: 0.7 }], [2.2, { langue: 1, miam: 0.6 }], [2.5, { langue: 0.1, miam: 0.7 }], [3.0, { miam: 0.3 }], [3.4, {}]] };
   // ── lécher une glace : 5 coups de langue, la boule rapetisse ──
   {
     const M = [0.075, -0.092, 0.217], licks = [], face = [[0, {}], [2.2, {}]], fk = []; let t = 2.9;
     for (let i = 0; i < 5; i++) {
       licks.push([t + 0.22, t + 0.8]);
-      face.push([t, { leche: 0.1 }], [t + 0.22, { leche: 1 }], [t + 0.8, { leche: 1 }], [t + 1.0, { leche: 0.05, miam: 0.5 }], [t + 1.25, { miam: 0.35 }]);
+      face.push([t, { leche: 0.1, l_bas: 0.3 }], [t + 0.22, { leche: 1, l_bas: 0.35 }], [t + 0.8, { leche: 1, l_haut: 0.6 }], [t + 1.0, { leche: 0.05, l_haut: 0.3, miam: 0.5 }], [t + 1.25, { miam: 0.35 }]);   // la pointe part du bas et se recourbe vers le haut en remontant la boule
       fk.push([t + 0.1, lean(0.05, 0.1)], [t + 0.8, lean(0.05, -0.06)], [t + 1.2, lean(0.05, 0.03)]);   // menton rentré → menton levé, langue tirée : le coup de langue remonte la boule
       t += 1.3;
     }

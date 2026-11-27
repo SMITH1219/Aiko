@@ -63,7 +63,7 @@ function buildEnvelope(buf, url) {
 
 /* ── Synchro labiale : le texte français devient une suite de visèmes, jouée au rythme de la voix ── */
 const LIP_V = ['PP', 'FF', 'TH', 'DD', 'kk', 'CH', 'SS', 'nn', 'RR', 'aa', 'E', 'I', 'O', 'U'];
-const LIP_GAIN = { aa: 0.6, E: 0.6, I: 0.55, O: 0.68, U: 0.7, PP: 0.95, FF: 0.8, TH: 0.5, DD: 0.45, kk: 0.45, CH: 0.7, SS: 0.55, nn: 0.4, RR: 0.45 };
+const LIP_GAIN = { aa: 0.6, E: 0.6, I: 0.55, O: 0.68, U: 0.7, PP: 1, FF: 0.8, TH: 0.5, DD: 0.45, kk: 0.45, CH: 0.7, SS: 0.55, nn: 0.4, RR: 0.45 };
 const LIP_RULES = [   // [motif en début de reste, visèmes, lettres consommées] — du plus long au plus court
   [/^eau/, ['O'], 3], [/^oin/, ['U', 'E'], 3], [/^ain(?![aeiouy])|^ein(?![aeiouy])/, ['E'], 3], [/^ill/, ['I'], 3],
   [/^au/, ['O'], 2], [/^ou/, ['U'], 2], [/^oi/, ['U', 'aa'], 2], [/^ai|^ei/, ['E'], 2],
@@ -95,7 +95,7 @@ function frVisemes(text) {
       for (const v of vs) {
         const prev = seq[seq.length - 1];
         if (prev && prev[0] === v && !LIP_VOWEL.has(v)) { prev[1] += 0.25; continue; }   // « mm », « tt »… : une seule fermeture
-        seq.push([v, LIP_VOWEL.has(v) ? 1 : (v === 'PP' ? 0.62 : 0.55), at + i]);
+        seq.push([v, LIP_VOWEL.has(v) ? 1 : (v === 'PP' ? 0.75 : 0.55), at + i]);   // p/b/m un peu plus longs : la fermeture des lèvres a le temps d'être vue (≈ 65 ms)
       }
       i += hit ? hit[2] : 1;
     }
@@ -156,7 +156,7 @@ function lipTargets(tNow) {
   let lo = 0, hi = lip.seq.length - 1;
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lip.starts[mid] <= pos) lo = mid; else hi = mid - 1; }
   const e = lip.seq[lo], f = (pos - lip.starts[lo]) / e[1], nx = lip.seq[lo + 1];
-  const b = f > 0.6 && nx ? (f - 0.6) / 0.4 * 0.55 : 0;      // coarticulation : on anticipe le son suivant
+  const b = e[0] === 'PP' ? 0 : f > 0.6 && nx ? (f - 0.6) / 0.4 * 0.55 : 0;      // coarticulation : on anticipe le son suivant — sauf pendant p/b/m, qui gardent les lèvres closes jusqu'au bout
   add(e[0], 1 - b);
   if (b) add(nx[0], b);
   return T;

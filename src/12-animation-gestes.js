@@ -31,12 +31,17 @@ function setExpr(name, w) {
     try { vrm.expressionManager.setValue(name, w); } catch (_) {}
   }
 }
+// Dynamique d'une expression (FACS : début → sommet → fin). Mesures publiées : début d'un sourire spontané ≈ 0,5 s (15,7 images à 30 i/s,
+// Schmidt & Cohn) ; un sourire sincère dure 0,5 à 4 s ; une fin trop brusque paraît fausse. La surprise monte vite, la tristesse lentement.
+const EMO_ON = { surprised: 0.16, fear: 0.2, angry: 0.3, disgust: 0.35, happy: 0.5, relaxed: 0.7, sad: 0.85, neutral: 0.4 };
+let emoT = 0, emoPrev = null, emoPrevW = 0;
 function setEmotion(name) {
-  if (emotion && emotion !== name) setExpr(emotion, 0);
+  if (emotion && emotion !== name) { emoPrev = emotion; emoPrevW = emoShown(); }   // l'ancienne s'efface en fondu (plus de bascule d'une image à l'autre)
+  if (emotion !== name) emoT = 0;
   emotion = name;
   emotionW = 1;
-  setExpr(name, 1);
 }
+function emoShown() { if (!emotion) return 0; const on = EMO_ON[emotion] || 0.45, x = Math.min(1, emoT / on), r = x * x * (3 - 2 * x); return Math.min(1, emotionW * 1.8) * r; }
 /* Gestes : petits mouvements joués d'eux-mêmes (elle les choisit en parlant, ou au repos). */
 const GEST = { wave: 2.6, nod: 1.5, shake: 1.7, think: 3.4, shrug: 2.0, lean: 2.8, tilt: 2.4, laugh: 1.9, shift: 3.2, flirt: 3.4, sway: 5.5 };
 /* ── Bibliothèque de gestes « en données » ──────────────────────────────────────────────────────────────
