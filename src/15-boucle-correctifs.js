@@ -144,6 +144,15 @@ function animateFrame() {
     const lH = lib && lib.head ? lib.head : null, lS = lib && lib.spine ? lib.spine : null;
     if (lib && lib.face) { if (libFace !== lib.face[0] && libFace) setExpr(libFace, 0); libFace = lib.face[0]; setExpr(libFace, lib.face[1] * lw); }
     else if (libFace) { setExpr(libFace, 0); libFace = null; }
+    if (lib && lib.faceSeq) {                          // visage IMAGE PAR IMAGE (langue, croquer, mâcher…) : [[temps, {expression: poids}], …], fondu entre deux étapes
+      const sq = lib.faceSeq; let i = 0; while (i + 1 < sq.length && sq[i + 1][0] <= gt) i++;
+      const A = sq[i], B = sq[i + 1], T = {};
+      let f = B ? (gt - A[0]) / Math.max(1e-3, B[0] - A[0]) : 0; f = Math.max(0, Math.min(1, f)); f = f * f * (3 - 2 * f);
+      for (const k in A[1]) T[k] = A[1][k] * (1 - f);
+      if (B) for (const k in B[1]) T[k] = (T[k] || 0) + B[1][k] * f;
+      for (const k in libFaceSet) if (!(k in T)) { setExpr(k, 0); delete libFaceSet[k]; }
+      for (const k in T) { libFaceSet[k] = 1; setExpr(k, T[k] * lw); }
+    } else { for (const k in libFaceSet) { setExpr(k, 0); delete libFaceSet[k]; } }
     const up = 1 - poseCur.lie;                       // allongée : pas de gestes du buste ni des bras
     const ew = emotion ? Math.min(1, emotionW * 1.8) : 0;
     const eSad = emotion === 'sad' ? ew : 0, eSur = emotion === 'surprised' ? ew : 0, eHap = emotion === 'happy' ? ew : 0, eAng = emotion === 'angry' ? ew : 0;
@@ -324,8 +333,10 @@ function animateFrame() {
       let any = 0;
       for (const v of LIP_V) { lip.cur[v] += (((T[v] || 0) * gate) - lip.cur[v]) * k; any += lip.cur[v]; }
       setVisemes();
+      { const c = lip.cur, vow = c.aa + 0.6 * c.E + 0.5 * c.O + 0.3 * c.I + 0.3 * c.U;          // JALI : la mâchoire suit le VOLUME réel sur les voyelles (voix forte = bouche plus ouverte), les lèvres gardent leurs formes
+        setExpr('jali', mouthOn && lipEnv && lipEnv.url === playerURL ? Math.min(0.3, vow * mouthV * 0.3) : 0); }
       mouthWas = mouthOn || any > 0.01;
-      if (!mouthWas) { for (const v of LIP_V) lip.cur[v] = 0; setVisemes(); mouthV = 0; }
+      if (!mouthWas) { for (const v of LIP_V) lip.cur[v] = 0; setVisemes(); setExpr('jali', 0); mouthV = 0; }
     }
     // émotion qui s'estompe
     if (emotion) {
@@ -400,6 +411,7 @@ function animateFrame() {
       else if (SLOCK[hk] || HGOAL[hk]) { SLOCK[hk] = null; HGOAL[hk] = null; }
       SURFREQ[hk] = null; }
     try { if (propGrasp(b, dt)) _srDone = true; } catch (e) { if (window.__tlErr) console.warn('prise', e); }   // objet tenu : doigts refermés sur sa vraie surface
+    try { eatTrack(b, dt, lib, gt, lw); } catch (e) { if (window.__tlErr) console.warn('manger', e); }   // aliment : amené au contact exact des lèvres ou de la langue
     if (lib && lw > 0.3 && lib.legFollow && gt > lib.legFollow.a + 0.3 && !window.__noGrasp) { const hk2 = lib.legFollow.hk; try { fingersToSurface(b, hk2, 1, dt, (p) => surfClosest(p, hk2 === 'l' ? 1 : 2, null, 0.12)); _srDone = true; } catch (_) {} }   // jambe portée : les doigts S'ENROULENT autour de la cheville (prise fermée, pouce en face)
     PERF.cur.mains += performance.now() - _pm;
     if (_srDone) { _srDone = false; try { vrm.humanoid.update(); if (vrm.nodeConstraintManager) vrm.nodeConstraintManager.update(); } catch (_) {} }   // CRUCIAL : vrm.update() a déjà copié le rig normalisé vers le vrai squelette AVANT nos corrections de main ; sans cette recopie, tout ce que la passe différée fait (paume, doigts) est calculé… et jamais affiché (bug vu : doigts raides à l'écran, mesures « parfaites » dans le vide)

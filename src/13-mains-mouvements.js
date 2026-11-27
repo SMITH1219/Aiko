@@ -150,7 +150,7 @@ const TALKG = ['tpresent', 'tpresentl', 'tboth', 'temph', 'tcircle', 'tone', 'tp
 const IDLEG = ['sway', 'hiproll', 'hair', 'neck', 'hip', 'shoulderroll', 'flirt', 'overshoulder', 'hairboth', 'shift', 'waist', 'smirk', 'sway', 'hairflip', 'lipbite', 'tilt', 'bodyroll', 'chin', 'fingerlip', 'behind', 'strap', 'archstretch', 'hips', 'wink', 'lean', 'thigh', 'viens', 'hairwhip', 'bodyroll', 'hiproll', 'lipbite'];   // attente : gestuelle féminine et sensuelle (déhanchés, cheveux, main sur la hanche, regards)
 let talkNext = 1.0, lastTalkG = '';
 let camDrop = 0, lastRigY = 0;
-let gst = null, idleNext = 10, shiftDir = 1, sideCur = 1, beat = 0, beatIdx = 0, beatHand = 1, libFace = null;
+let gst = null, idleNext = 10, shiftDir = 1, sideCur = 1, beat = 0, beatIdx = 0, beatHand = 1, libFace = null, libFaceSet = {};
 // ── postures porteuses : l'IK des jambes débloque les positions que le modèle debout/assis/allongé ne pouvait pas tenir ──
 // (bassin qui descend + pieds ancrés au sol + genoux qui plient = accroupie, squat, fente…)
 let freePose = null, freeW = 0;

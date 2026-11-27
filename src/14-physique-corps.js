@@ -246,6 +246,7 @@ const PROPS = {
   verre:     { lift: 0.0,  fwd: 0.0 },  tasse: { lift: 0.0, fwd: 0.0 },  bouteille: { lift: 0.03, fwd: 0.0 },
   telephone: { face: 1, lift: 0.03, fwd: 0.0 },  livre: { face: 1, lift: 0.04, fwd: 0.0 },
   fleur:     { lift: 0.0, fwd: 0.0 },  stylo: { lift: 0.03, fwd: 0.0 },  miroir: { face: 1, lift: 0.07, fwd: 0.0 },
+  glace:     { lift: 0.0, fwd: 0.0 },  pomme: { lift: 0.0, fwd: 0.0 },          // aliments : voir « BOUCHE » (lécher, croquer, mâcher)
 };
 function buildProp(name) {
   const g = new THREE.Group(), M = (c, r = 0.5, m = 0, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: r, metalness: m }, o));
@@ -258,6 +259,18 @@ function buildProp(name) {
   else if (name === 'fleur') { add(new THREE.CylinderGeometry(0.004, 0.004, 0.26, 8), M(0x3b7a3a, 0.7), 0, 0.02, 0); const hd = add(new THREE.IcosahedronGeometry(0.03, 1), M(0xe0457b, 0.5), 0, 0.17, 0); hd.scale.set(1, 0.7, 1); add(new THREE.SphereGeometry(0.011, 10, 10), M(0xf2c14e, 0.6), 0, 0.185, 0); }
   else if (name === 'stylo') { add(new THREE.CylinderGeometry(0.006, 0.006, 0.14, 10), M(0x1b3a6b, 0.3, 0.3)); add(new THREE.ConeGeometry(0.006, 0.02, 10), M(0xc9c9c9, 0.3, 0.8), 0, -0.08, 0); }
   else if (name === 'miroir') { add(new THREE.CylinderGeometry(0.055, 0.055, 0.008, 28), M(0xd9b46a, 0.3, 0.8), 0, 0.09, 0).rotation.x = Math.PI / 2; add(new THREE.CircleGeometry(0.05, 28), M(0xcfe0ea, 0.05, 1), 0, 0.09, 0.0045); add(new THREE.CylinderGeometry(0.009, 0.009, 0.1, 10), M(0xd9b46a, 0.3, 0.8), 0, 0.0, 0); }
+  else if (name === 'glace') {          // cornet (pointe en bas, tenu par le milieu) + boule : la boule rapetisse à chaque coup de langue
+    const c = add(new THREE.ConeGeometry(0.024, 0.11, 24, 1, true), M(0xd9a35b, 0.85, 0, { side: THREE.DoubleSide })); c.rotation.x = Math.PI;
+    add(new THREE.SphereGeometry(0.0235, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), M(0xf3a6bb, 0.55), 0, 0.053, 0);
+    const b = add(new THREE.SphereGeometry(0.03, 28, 20), M(0xf3a6bb, 0.5), 0, 0.075, 0); b.name = 'boule';
+  }
+  else if (name === 'pomme') {          // pomme : chaque bouchée CREUSE vraiment sa surface (chair claire), voir propBite
+    const geo = new THREE.SphereGeometry(0.034, 72, 50), n = geo.attributes.position.count, col = new Float32Array(n * 3), red = new THREE.Color(0xb5202a);
+    for (let i = 0; i < n; i++) { const y = geo.attributes.position.getY(i) / 0.034, k = 0.85 + 0.15 * Math.sin(i * 12.9898) * (1 - Math.abs(y)); col[i * 3] = red.r * k + 0.1 * Math.max(0, y); col[i * 3 + 1] = red.g * k + 0.18 * Math.max(0, y - 0.6); col[i * 3 + 2] = red.b * k; }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const a = add(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32 })); a.name = 'chair'; a.scale.set(1, 0.93, 1);
+    add(new THREE.CylinderGeometry(0.0012, 0.0016, 0.016, 6), M(0x4a3020, 0.8), 0.002, 0.036, 0).rotation.z = -0.25;
+  }
   g.traverse((o) => { if (o.isMesh) o.castShadow = false; });
   return g;
 }
@@ -268,7 +281,8 @@ function propTable() {
   const t = new THREE.Group(), wood = new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.7 });
   const top = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.025, 32), wood); top.name = 'top';
   const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 1, 12), wood); leg.name = 'leg';
-  t.add(top, leg); t.visible = false; scene.add(t); PROPS_ST.table = t; return t;
+  const sup = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.016, 0.06, 20, 1, true), new THREE.MeshStandardMaterial({ color: 0xcfe6f2, roughness: 0.08, transparent: true, opacity: 0.4, side: THREE.DoubleSide })); sup.name = 'support'; sup.position.y = 0.0425; sup.visible = false;   // porte-cornet (pour la glace) : reste sur la table
+  t.add(top, leg, sup); t.visible = false; scene.add(t); PROPS_ST.table = t; return t;
 }
 function handFrame(b, hk) {                          // repère de la main dans son propre repère : f = vers les doigts, t = vers le pouce, n = paume
   const set = b.hand && b.hand[hk]; if (!set || !set.Middle || !set.Index || !set.Little || !set.Middle[0]) return null;
@@ -282,6 +296,7 @@ function propUpdate(lib, gt, b) {
   const T = propTable(), hk = spec.h || 'r', side = hk === 'r' ? 1 : -1, def = PROPS[spec.n]; if (!def) return;
   if (S.name !== spec.n || !S.mesh) { if (S.mesh && S.mesh.parent) S.mesh.parent.remove(S.mesh); S.mesh = buildProp(spec.n); S.name = spec.n; S.held = false; }
   S.vis = Math.min(1, S.vis + 0.1); T.visible = true; T.scale.setScalar(S.vis); S.hand = hk;
+  { const sup = T.getObjectByName('support'); if (sup) sup.visible = spec.n === 'glace'; }
   // la table : devant elle, du côté de la main qui prend, à hauteur de hanche
   b.hips.getWorldPosition(_pv.a); _pv.Z.copy(_bf.Z).setY(0).normalize(); _pv.X.copy(_bf.X).setY(0).normalize();
   const k = body.k || 1, tx = _pv.a.x + _pv.Z.x * 0.36 * k + _pv.X.x * 0.2 * k * side, tz = _pv.a.z + _pv.Z.z * 0.36 * k + _pv.X.z * 0.2 * k * side, ty = _pv.a.y - 0.07 * k;
@@ -311,9 +326,11 @@ const PROP_SDF = {
   verre: (p) => Math.max(Math.hypot(p.x, p.z) - (0.0325 + (p.y / 0.12) * 0.007), Math.abs(p.y) - 0.06),
   tasse: (p) => Math.max(Math.hypot(p.x, p.z) - (0.037 + (p.y / 0.08) * 0.006), Math.abs(p.y) - 0.04),
   bouteille: (p) => Math.max(Math.hypot(p.x, p.z) - 0.034, Math.abs(p.y) - 0.085),
-  telephone: (p) => _sdfBox(p, 0.036, 0.075, 0.0045), livre: (p) => _sdfBox(p, 0.075, 0.105, 0.013) };
+  telephone: (p) => _sdfBox(p, 0.036, 0.075, 0.0045), livre: (p) => _sdfBox(p, 0.075, 0.105, 0.013),
+  glace: (p) => Math.max(Math.hypot(p.x, p.z) - (0.003 + (p.y + 0.055) / 0.11 * 0.021), Math.abs(p.y) - 0.055),   // le cornet (c'est lui qu'elle tient)
+  pomme: (p) => Math.hypot(p.x, p.y / 0.93, p.z) - 0.034 };
 const PROP_SHIFT = { telephone: 0.05, livre: 0.04 }, PROP_LONG = { telephone: 1 };
-const PROP_R = { verre: 0.032, tasse: 0.036, bouteille: 0.034, telephone: 0.0045, livre: 0.013 };
+const PROP_R = { verre: 0.032, tasse: 0.036, bouteille: 0.034, telephone: 0.0045, livre: 0.013, glace: 0.0135, pomme: 0.034 };
 function propGrasp(b, dt) {                         // passe différée (après la physique) : sur la main AFFICHÉE
   const S = PROPS_ST; if (!S.held || !S.mesh || !PROP_SDF[S.name] || window.__noGrasp) return false;
   const hk = S.hand, hand = hk === 'l' ? b.lHand : b.rHand; surfPropagate(b);
@@ -336,7 +353,7 @@ function propGrasp(b, dt) {                         // passe différée (après 
   fingersToSurface(b, hk, 1, dt, (p) => f(tmp.copy(p).applyMatrix4(inv)));
   return true;
 }
-const PROPS_H = { verre: 0.06, tasse: 0.04, bouteille: 0.085, telephone: 0.005, livre: 0.013, fleur: 0.004, stylo: 0.006, miroir: 0.05 };
+const PROPS_H = { verre: 0.06, tasse: 0.04, bouteille: 0.085, telephone: 0.005, livre: 0.013, fleur: 0.004, stylo: 0.006, miroir: 0.05, glace: 0.085, pomme: 0.0316 };
 /* Gestes avec objet : même format que les autres gestes (images-clés), plus `prop` : {n, h, on, off} = quand l'objet est dans la main. */
 (function () {
   const T = (x, y, z) => ['hips', [x, y, z]], rest = ['sh', [0.2, -0.4, 0.05]];
@@ -566,6 +583,7 @@ function autoCamUpdate(dt) {
   const g = gst, k = body.k || 1, tt = now / 1000;
   let mode = '';
   if (g && g.clip && !/saut|jump/i.test(g.name)) mode = 'danse';
+  else if (g && g.lib && (g.lib.eat || (g.lib.faceSeq && !g.lib.prop))) mode = 'bouche';   // elle mange, lèche, tire la langue : gros plan sur le visage
   else if (g && g.lib && g.lib.prop) mode = 'objet';
   else if (g && g.lib && (g.lib.l || g.lib.r) && !g.lib.legs) mode = 'mains';
   else if (g && g.lib && (g.lib.legs || g.lib.ground)) mode = 'danse';
@@ -576,6 +594,7 @@ function autoCamUpdate(dt) {
   const sw = A.saved ? A.saved.yaw : 0;
   if (mode === 'danse') { CAM.dist = 3.6 * k; CAM.py = -0.3 * k; CAM.px = 0; CAM.pitch = 0.06; CAM.yaw = sw + 0.5 * Math.sin(tt * 0.22); }
   else if (mode === 'objet') { CAM.dist = 1.9 * k; CAM.py = -0.02 * k; CAM.px = 0.08 * k; CAM.pitch = 0.04; CAM.yaw = sw + 0.35; }
+  else if (mode === 'bouche') { let hy = 0.6 * k; try { hy = vrm.humanoid.getNormalizedBoneNode('head').getWorldPosition(_po).y - target.y; } catch (_) {} CAM.dist = 1.05 * k; CAM.py = hy - 0.07 * k; CAM.px = 0; CAM.pitch = 0.03; CAM.yaw = sw + 0.5; }
   else if (mode === 'mains') { CAM.dist = 2.0 * k; CAM.py = 0.02 * k; CAM.px = 0; CAM.pitch = 0.04; CAM.yaw = sw + 0.12 * Math.sin(tt * 0.3); }
   else { CAM.dist = 2.2 * k; CAM.py = 0.1 * k; CAM.px = 0; CAM.pitch = 0.04; CAM.yaw = sw + 0.1 * Math.sin(tt * 0.25); }
 }
@@ -677,6 +696,7 @@ function applyLib(def, gt, w, b) {
   for (const [hk, side, up, lo, hand, pk] of [['r', 1, b.rArm, b.rLowArm, b.rHand, 'rPole'], ['l', -1, b.lArm, b.lLowArm, b.lHand, 'lPole']]) {
     const keys = def[hk]; if (!keys) continue;
     const tg0 = libKey(keys, gt, side, def.osc || null, gt, def.blend).clone();
+    if (def.eat && def.prop && def.prop.h === hk) eatAdjust(def, gt, tg0);   // aliment : correction mesurée à l'image précédente (l'aliment arrive AU CONTACT de la bouche, au millimètre)
     if (def.circ) {                                             // circumduction : circ [axe A, axe B, rayon (m), fréquence]
       const ax = [_bf.X, _bf.Y, _bf.Z], cc = def.circ, sd = (cc[0] === 0 ? side : 1), sd2 = (cc[1] === 0 ? side : 1);
       tg0.addScaledVector(ax[cc[0]], cc[2] * Math.sin(gt * cc[3]) * sd).addScaledVector(ax[cc[1]], cc[2] * Math.cos(gt * cc[3]) * sd2);
@@ -721,7 +741,8 @@ function applyLib(def, gt, w, b) {
         else { surfAimWrist(b, hk, hand, zo, _bf.tg2); tg0.lerp(_bf.tg2, mw); }
       }
     }
-    const tg = pushOut(tg0, def.noPush || tsw > 0.5 ? -1 : 0.032);
+    const tg = pushOut(tg0, def.noPush || tsw > 0.5 || (def.eat && EAT.w > 0.05) ? -1 : 0.032);
+    if (window.__eatDbg) (window.__tgDbg = window.__tgDbg || {})[hk] = tg.clone();
     const pp = def[pk] || [1, -0.7, -0.3];
     _bf.pl.set(0, 0, 0).addScaledVector(_bf.X, pp[0] * side).addScaledVector(_bf.Y, pp[1]).addScaledVector(_bf.Z, pp[2]);
     { // rythme scapulo-huméral : au-delà de ~35° d'élévation, l'omoplate pivote et l'épaule monte (≈ 1/3 du mouvement), comme chez un humain

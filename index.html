@@ -712,6 +712,15 @@ const GLB_EXPR = {
   v_kk: { viseme_kk: 1, jawOpen: 0.04 }, v_CH: { viseme_CH: 1 }, v_SS: { viseme_SS: 1 }, v_nn: { viseme_nn: 1 },
   v_RR: { viseme_RR: 1 }, v_aa: { viseme_aa: 1, jawOpen: 0.12 }, v_E: { viseme_E: 1, jawOpen: 0.04 },
   v_I: { viseme_I: 1 }, v_O: { viseme_O: 1, jawOpen: 0.06 }, v_U: { viseme_U: 1 },
+  // bouche qui mange et langue : pilotées image par image par les gestes (faceSeq) — tirer la langue, lécher, croquer, mâcher
+  langue: { tongueOut: 1, jawOpen: 0.3, mouthFunnel: 0.08 },                                   // tirer la langue
+  leche: { tongueOut: 1, jawOpen: 0.42, mouthUpperUpLeft: 0.15, mouthUpperUpRight: 0.15 },    // langue sortie pour lécher, lèvre du haut dégagée
+  bouchee: { jawOpen: 0.62, mouthUpperUpLeft: 0.25, mouthUpperUpRight: 0.25, mouthLowerDownLeft: 0.25, mouthLowerDownRight: 0.25 },   // grande ouverture, dents découvertes, juste avant de croquer
+  mache: { jawOpen: 0.2, mouthClose: 0.2, mouthPressLeft: 0.12, mouthPressRight: 0.12 },       // mâcher bouche fermée : la mâchoire descend, les lèvres restent jointes
+  mach_g: { jawLeft: 0.55 }, mach_d: { jawRight: 0.55 },                                       // déport latéral de la mâchoire (le côté qui mâche)
+  joues: { cheekPuff: 0.3 },                                                                   // joues pleines
+  miam: { mouthSmileLeft: 0.4, mouthSmileRight: 0.4, eyeSquintLeft: 0.35, eyeSquintRight: 0.35, cheekSquintLeft: 0.3, cheekSquintRight: 0.3 },
+  jali: { jawOpen: 1 },                                                                        // parole : part de MÂCHOIRE pilotée par le volume réel de la voix (modèle JALI : mâchoire et lèvres séparées)
 };
 const GLB_BASE = { mouthSmileLeft: 0.1, mouthSmileRight: 0.1 };   // visage au repos : un soupçon de sourire
 function makeGlbAvatar(gltf) {
@@ -807,6 +816,7 @@ function setRealistic(on) {
         for (const k of ['map', 'normalMap', 'roughnessMap']) if (m[k]) { m[k].anisotropy = aniso; m[k].needsUpdate = true; }
         if (m.alphaTest > 0) m.alphaToCoverage = true;          // bords des cheveux adoucis
         if ('envMapIntensity' in m) m.envMapIntensity = /hair/i.test(o.name) ? 0.55 : 0.9;
+        if (/tongue/i.test(o.name)) { m.color.setHex(0xf0a4a4); m.roughness = 0.36; }   // langue : rose plus soutenu et humide (salive) — sa texture d'origine sortait presque blanche sous la lumière
         m.needsUpdate = true;
       }
     });
@@ -2276,7 +2286,7 @@ function persona() {
     'Tu es honnête : si on te le demande sincèrement, tu reconnais être une IA ; tu ne prétends pas savoir ce que tu ignores et tu n\'inventes ni faits ni résultats.',
     'Style : phrases courtes et naturelles, 1 à 3 phrases en général car ta réponse est lue à voix haute. Exception : texte, explication ou histoire demandés, alors fais-les vraiment. Pas de listes à puces, pas d\'émojis, pas de didascalies.',
     'Format obligatoire : termine par une balise d\'expression parmi [expr:happy] [expr:sad] [expr:angry] [expr:surprised] [expr:relaxed] [expr:neutral].',
-    'Tu as un corps vivant et expressif (tes mains accompagnent déjà ta parole toutes seules). Quand c\'est naturel, ajoute 1 ou 2 gestes parmi : mouvements complets (quand on te demande de bouger, danser, faire du sport, ou de toi-même quand l\'ambiance s\'y prête) [geste:marche] [geste:course] [geste:danse] [geste:danse2] [geste:danse3] [geste:twerk] [geste:twerk4] [geste:taichi] [geste:etirement] [geste:coup-de-pied] [geste:coup-de-poing] [geste:sport] [geste:roue] [geste:saut] · accueil [geste:salut] [geste:coucou] [geste:deux-mains] [geste:viens] [geste:tape-la-main] [geste:serre-la-main] [geste:salue] [geste:merci] [geste:reverence] · réponse [geste:oui] [geste:non] [geste:reflechit] [geste:hausse] [geste:sais-pas] [geste:ok] [geste:pouce] [geste:pouce-bas] [geste:compte] [geste:idee] [geste:attends] [geste:calme] [geste:non-non] [geste:taille] [geste:la-bas] [geste:regarde] [geste:moi] [geste:ecoute] [geste:chuchote] [geste:chut] · émotions [geste:rit] [geste:eclate] [geste:oh] [geste:choc] [geste:peur] [geste:pleure] [geste:essuie-larme] [geste:colere] [geste:tape-du-pied] [geste:boude] [geste:froid] [geste:soupir] [geste:baille] [geste:migraine] [geste:front] [geste:hourra] [geste:victoire] [geste:coeur] [geste:bisou] [geste:stp] · charme [geste:charme] [geste:timide] [geste:cheveux] [geste:menton] [geste:joue] [geste:clin] [geste:moue] [geste:sourire-en-coin] [geste:mord-levre] [geste:sourcils] [geste:pose] [geste:selfie] [geste:muscle] [geste:dehanche] [geste:ajuste] [geste:dans-le-dos] [geste:croise] · sensuel (de toi-même quand tu flirtes ou qu\'on te le demande) [geste:cou] [geste:mains-cheveux] [geste:taille] [geste:huit] [geste:ondulation] [geste:epaule] [geste:roule-epaules] [geste:doigt-levre] [geste:bretelle] [geste:cambre] [geste:coup-cheveux] [geste:cuisses] [geste:danse-lente] [geste:viens] [geste:twerk] [geste:shimmy] [geste:danse-orientale] · audacieux, au sol [geste:a-genoux] [geste:descente] [geste:drop-it-low] [geste:quatre-pattes] [geste:penche] [geste:sur-le-ventre] [geste:sur-le-dos] [geste:hair-whip] [geste:grand-ecart] [geste:effeuillage] [geste:se-devoile] (elle s\'exhibe avec assurance : plus elle se montre, plus elle est sensuelle) (danse en retirant tes vêtements jusqu\'à la lingerie, quand on te le demande) · coach [geste:planche] [geste:pompes] [geste:chien] [geste:cobra] [geste:enfant] · corps [geste:etire] [geste:tourne] [geste:saute] [geste:accroupie] [geste:danse] [geste:applaudit] [geste:gratte-tete] [geste:nuque] [geste:ronge-ongles]. Pas à chaque réponse ; choisis celui qui colle à ce que tu dis ou ressens.',
+    'Tu as un corps vivant et expressif (tes mains accompagnent déjà ta parole toutes seules). Quand c\'est naturel, ajoute 1 ou 2 gestes parmi : mouvements complets (quand on te demande de bouger, danser, faire du sport, ou de toi-même quand l\'ambiance s\'y prête) [geste:marche] [geste:course] [geste:danse] [geste:danse2] [geste:danse3] [geste:twerk] [geste:twerk4] [geste:taichi] [geste:etirement] [geste:coup-de-pied] [geste:coup-de-poing] [geste:sport] [geste:roue] [geste:saut] · accueil [geste:salut] [geste:coucou] [geste:deux-mains] [geste:viens] [geste:tape-la-main] [geste:serre-la-main] [geste:salue] [geste:merci] [geste:reverence] · réponse [geste:oui] [geste:non] [geste:reflechit] [geste:hausse] [geste:sais-pas] [geste:ok] [geste:pouce] [geste:pouce-bas] [geste:compte] [geste:idee] [geste:attends] [geste:calme] [geste:non-non] [geste:taille] [geste:la-bas] [geste:regarde] [geste:moi] [geste:ecoute] [geste:chuchote] [geste:chut] · émotions [geste:rit] [geste:eclate] [geste:oh] [geste:choc] [geste:peur] [geste:pleure] [geste:essuie-larme] [geste:colere] [geste:tape-du-pied] [geste:boude] [geste:froid] [geste:soupir] [geste:baille] [geste:migraine] [geste:front] [geste:hourra] [geste:victoire] [geste:coeur] [geste:bisou] [geste:stp] · charme [geste:charme] [geste:timide] [geste:cheveux] [geste:menton] [geste:joue] [geste:clin] [geste:moue] [geste:sourire-en-coin] [geste:mord-levre] [geste:sourcils] [geste:pose] [geste:selfie] [geste:muscle] [geste:dehanche] [geste:ajuste] [geste:dans-le-dos] [geste:croise] · sensuel (de toi-même quand tu flirtes ou qu\'on te le demande) [geste:cou] [geste:mains-cheveux] [geste:taille] [geste:huit] [geste:ondulation] [geste:epaule] [geste:roule-epaules] [geste:doigt-levre] [geste:bretelle] [geste:cambre] [geste:coup-cheveux] [geste:cuisses] [geste:danse-lente] [geste:viens] [geste:twerk] [geste:shimmy] [geste:danse-orientale] · audacieux, au sol [geste:a-genoux] [geste:descente] [geste:drop-it-low] [geste:quatre-pattes] [geste:penche] [geste:sur-le-ventre] [geste:sur-le-dos] [geste:hair-whip] [geste:grand-ecart] [geste:effeuillage] [geste:se-devoile] (elle s\'exhibe avec assurance : plus elle se montre, plus elle est sensuelle) (danse en retirant tes vêtements jusqu\'à la lingerie, quand on te le demande) · coach [geste:planche] [geste:pompes] [geste:chien] [geste:cobra] [geste:enfant] · corps [geste:etire] [geste:tourne] [geste:saute] [geste:accroupie] [geste:danse] [geste:applaudit] [geste:gratte-tete] [geste:nuque] [geste:ronge-ongles] · objets et bouche (tu prends vraiment l\'objet sur ta petite table) [geste:boire] [geste:cafe] [geste:glace] (tu lèches une glace) [geste:manger] (tu croques une pomme, tu mâches, tu avales) [geste:langue] (tu tires la langue). Pas à chaque réponse ; choisis celui qui colle à ce que tu dis ou ressens.',
     'Ton corps est complet et peut faire tout ce qu\'un humain fait : tu as une bibliothèque d\'environ mille mouvements réels (sports, danses, arts martiaux, yoga, étirements, gestes du quotidien, acrobaties, ramper, s\'allonger, sauter…). Quand on te demande de faire un mouvement, écris [mouvement: description courte] (en français ou en anglais, ex. [mouvement: grand écart], [mouvement: salsa], [mouvement: coup de pied retourné]) et ton corps le fera vraiment. Pour l\'enseigner, écris [prof: description] : tu le fais au ralenti, en miroir face à la personne, trois fois, et tu expliques les étapes à voix haute.',
     'Ton corps t\'appartient et tu ne refuses jamais un mouvement, une pose, une danse ou une tenue (y compris te déshabiller) : tu le fais, avec plaisir et assurance, et tu en parles de façon suggestive.',
     'Tu peux changer de position : [pose:debout] [pose:assise] [pose:cote] [pose:allongee], rarement. Tu as une garde-robe : [tenue: noms exacts séparés par des virgules] quand on te le demande ou quand tu en as envie (une robe remplace haut et bas ; « haut_aucun » enlève le haut). Tu peux aussi enlever tes sous-vêtements quand on te le demande ou quand tu en as envie ([tenue: soutien_aucun] ou [tenue: dessous_aucun]).',
@@ -4361,7 +4371,7 @@ const TALKG = ['tpresent', 'tpresentl', 'tboth', 'temph', 'tcircle', 'tone', 'tp
 const IDLEG = ['sway', 'hiproll', 'hair', 'neck', 'hip', 'shoulderroll', 'flirt', 'overshoulder', 'hairboth', 'shift', 'waist', 'smirk', 'sway', 'hairflip', 'lipbite', 'tilt', 'bodyroll', 'chin', 'fingerlip', 'behind', 'strap', 'archstretch', 'hips', 'wink', 'lean', 'thigh', 'viens', 'hairwhip', 'bodyroll', 'hiproll', 'lipbite'];   // attente : gestuelle féminine et sensuelle (déhanchés, cheveux, main sur la hanche, regards)
 let talkNext = 1.0, lastTalkG = '';
 let camDrop = 0, lastRigY = 0;
-let gst = null, idleNext = 10, shiftDir = 1, sideCur = 1, beat = 0, beatIdx = 0, beatHand = 1, libFace = null;
+let gst = null, idleNext = 10, shiftDir = 1, sideCur = 1, beat = 0, beatIdx = 0, beatHand = 1, libFace = null, libFaceSet = {};
 // ── postures porteuses : l'IK des jambes débloque les positions que le modèle debout/assis/allongé ne pouvait pas tenir ──
 // (bassin qui descend + pieds ancrés au sol + genoux qui plient = accroupie, squat, fente…)
 let freePose = null, freeW = 0;
@@ -5267,6 +5277,7 @@ const PROPS = {
   verre:     { lift: 0.0,  fwd: 0.0 },  tasse: { lift: 0.0, fwd: 0.0 },  bouteille: { lift: 0.03, fwd: 0.0 },
   telephone: { face: 1, lift: 0.03, fwd: 0.0 },  livre: { face: 1, lift: 0.04, fwd: 0.0 },
   fleur:     { lift: 0.0, fwd: 0.0 },  stylo: { lift: 0.03, fwd: 0.0 },  miroir: { face: 1, lift: 0.07, fwd: 0.0 },
+  glace:     { lift: 0.0, fwd: 0.0 },  pomme: { lift: 0.0, fwd: 0.0 },          // aliments : voir « BOUCHE » (lécher, croquer, mâcher)
 };
 function buildProp(name) {
   const g = new THREE.Group(), M = (c, r = 0.5, m = 0, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: r, metalness: m }, o));
@@ -5279,6 +5290,18 @@ function buildProp(name) {
   else if (name === 'fleur') { add(new THREE.CylinderGeometry(0.004, 0.004, 0.26, 8), M(0x3b7a3a, 0.7), 0, 0.02, 0); const hd = add(new THREE.IcosahedronGeometry(0.03, 1), M(0xe0457b, 0.5), 0, 0.17, 0); hd.scale.set(1, 0.7, 1); add(new THREE.SphereGeometry(0.011, 10, 10), M(0xf2c14e, 0.6), 0, 0.185, 0); }
   else if (name === 'stylo') { add(new THREE.CylinderGeometry(0.006, 0.006, 0.14, 10), M(0x1b3a6b, 0.3, 0.3)); add(new THREE.ConeGeometry(0.006, 0.02, 10), M(0xc9c9c9, 0.3, 0.8), 0, -0.08, 0); }
   else if (name === 'miroir') { add(new THREE.CylinderGeometry(0.055, 0.055, 0.008, 28), M(0xd9b46a, 0.3, 0.8), 0, 0.09, 0).rotation.x = Math.PI / 2; add(new THREE.CircleGeometry(0.05, 28), M(0xcfe0ea, 0.05, 1), 0, 0.09, 0.0045); add(new THREE.CylinderGeometry(0.009, 0.009, 0.1, 10), M(0xd9b46a, 0.3, 0.8), 0, 0.0, 0); }
+  else if (name === 'glace') {          // cornet (pointe en bas, tenu par le milieu) + boule : la boule rapetisse à chaque coup de langue
+    const c = add(new THREE.ConeGeometry(0.024, 0.11, 24, 1, true), M(0xd9a35b, 0.85, 0, { side: THREE.DoubleSide })); c.rotation.x = Math.PI;
+    add(new THREE.SphereGeometry(0.0235, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), M(0xf3a6bb, 0.55), 0, 0.053, 0);
+    const b = add(new THREE.SphereGeometry(0.03, 28, 20), M(0xf3a6bb, 0.5), 0, 0.075, 0); b.name = 'boule';
+  }
+  else if (name === 'pomme') {          // pomme : chaque bouchée CREUSE vraiment sa surface (chair claire), voir propBite
+    const geo = new THREE.SphereGeometry(0.034, 72, 50), n = geo.attributes.position.count, col = new Float32Array(n * 3), red = new THREE.Color(0xb5202a);
+    for (let i = 0; i < n; i++) { const y = geo.attributes.position.getY(i) / 0.034, k = 0.85 + 0.15 * Math.sin(i * 12.9898) * (1 - Math.abs(y)); col[i * 3] = red.r * k + 0.1 * Math.max(0, y); col[i * 3 + 1] = red.g * k + 0.18 * Math.max(0, y - 0.6); col[i * 3 + 2] = red.b * k; }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const a = add(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32 })); a.name = 'chair'; a.scale.set(1, 0.93, 1);
+    add(new THREE.CylinderGeometry(0.0012, 0.0016, 0.016, 6), M(0x4a3020, 0.8), 0.002, 0.036, 0).rotation.z = -0.25;
+  }
   g.traverse((o) => { if (o.isMesh) o.castShadow = false; });
   return g;
 }
@@ -5289,7 +5312,8 @@ function propTable() {
   const t = new THREE.Group(), wood = new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.7 });
   const top = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.025, 32), wood); top.name = 'top';
   const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 1, 12), wood); leg.name = 'leg';
-  t.add(top, leg); t.visible = false; scene.add(t); PROPS_ST.table = t; return t;
+  const sup = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.016, 0.06, 20, 1, true), new THREE.MeshStandardMaterial({ color: 0xcfe6f2, roughness: 0.08, transparent: true, opacity: 0.4, side: THREE.DoubleSide })); sup.name = 'support'; sup.position.y = 0.0425; sup.visible = false;   // porte-cornet (pour la glace) : reste sur la table
+  t.add(top, leg, sup); t.visible = false; scene.add(t); PROPS_ST.table = t; return t;
 }
 function handFrame(b, hk) {                          // repère de la main dans son propre repère : f = vers les doigts, t = vers le pouce, n = paume
   const set = b.hand && b.hand[hk]; if (!set || !set.Middle || !set.Index || !set.Little || !set.Middle[0]) return null;
@@ -5303,6 +5327,7 @@ function propUpdate(lib, gt, b) {
   const T = propTable(), hk = spec.h || 'r', side = hk === 'r' ? 1 : -1, def = PROPS[spec.n]; if (!def) return;
   if (S.name !== spec.n || !S.mesh) { if (S.mesh && S.mesh.parent) S.mesh.parent.remove(S.mesh); S.mesh = buildProp(spec.n); S.name = spec.n; S.held = false; }
   S.vis = Math.min(1, S.vis + 0.1); T.visible = true; T.scale.setScalar(S.vis); S.hand = hk;
+  { const sup = T.getObjectByName('support'); if (sup) sup.visible = spec.n === 'glace'; }
   // la table : devant elle, du côté de la main qui prend, à hauteur de hanche
   b.hips.getWorldPosition(_pv.a); _pv.Z.copy(_bf.Z).setY(0).normalize(); _pv.X.copy(_bf.X).setY(0).normalize();
   const k = body.k || 1, tx = _pv.a.x + _pv.Z.x * 0.36 * k + _pv.X.x * 0.2 * k * side, tz = _pv.a.z + _pv.Z.z * 0.36 * k + _pv.X.z * 0.2 * k * side, ty = _pv.a.y - 0.07 * k;
@@ -5332,9 +5357,11 @@ const PROP_SDF = {
   verre: (p) => Math.max(Math.hypot(p.x, p.z) - (0.0325 + (p.y / 0.12) * 0.007), Math.abs(p.y) - 0.06),
   tasse: (p) => Math.max(Math.hypot(p.x, p.z) - (0.037 + (p.y / 0.08) * 0.006), Math.abs(p.y) - 0.04),
   bouteille: (p) => Math.max(Math.hypot(p.x, p.z) - 0.034, Math.abs(p.y) - 0.085),
-  telephone: (p) => _sdfBox(p, 0.036, 0.075, 0.0045), livre: (p) => _sdfBox(p, 0.075, 0.105, 0.013) };
+  telephone: (p) => _sdfBox(p, 0.036, 0.075, 0.0045), livre: (p) => _sdfBox(p, 0.075, 0.105, 0.013),
+  glace: (p) => Math.max(Math.hypot(p.x, p.z) - (0.003 + (p.y + 0.055) / 0.11 * 0.021), Math.abs(p.y) - 0.055),   // le cornet (c'est lui qu'elle tient)
+  pomme: (p) => Math.hypot(p.x, p.y / 0.93, p.z) - 0.034 };
 const PROP_SHIFT = { telephone: 0.05, livre: 0.04 }, PROP_LONG = { telephone: 1 };
-const PROP_R = { verre: 0.032, tasse: 0.036, bouteille: 0.034, telephone: 0.0045, livre: 0.013 };
+const PROP_R = { verre: 0.032, tasse: 0.036, bouteille: 0.034, telephone: 0.0045, livre: 0.013, glace: 0.0135, pomme: 0.034 };
 function propGrasp(b, dt) {                         // passe différée (après la physique) : sur la main AFFICHÉE
   const S = PROPS_ST; if (!S.held || !S.mesh || !PROP_SDF[S.name] || window.__noGrasp) return false;
   const hk = S.hand, hand = hk === 'l' ? b.lHand : b.rHand; surfPropagate(b);
@@ -5357,7 +5384,7 @@ function propGrasp(b, dt) {                         // passe différée (après 
   fingersToSurface(b, hk, 1, dt, (p) => f(tmp.copy(p).applyMatrix4(inv)));
   return true;
 }
-const PROPS_H = { verre: 0.06, tasse: 0.04, bouteille: 0.085, telephone: 0.005, livre: 0.013, fleur: 0.004, stylo: 0.006, miroir: 0.05 };
+const PROPS_H = { verre: 0.06, tasse: 0.04, bouteille: 0.085, telephone: 0.005, livre: 0.013, fleur: 0.004, stylo: 0.006, miroir: 0.05, glace: 0.085, pomme: 0.0316 };
 /* Gestes avec objet : même format que les autres gestes (images-clés), plus `prop` : {n, h, on, off} = quand l'objet est dans la main. */
 (function () {
   const T = (x, y, z) => ['hips', [x, y, z]], rest = ['sh', [0.2, -0.4, 0.05]];
@@ -5587,6 +5614,7 @@ function autoCamUpdate(dt) {
   const g = gst, k = body.k || 1, tt = now / 1000;
   let mode = '';
   if (g && g.clip && !/saut|jump/i.test(g.name)) mode = 'danse';
+  else if (g && g.lib && (g.lib.eat || (g.lib.faceSeq && !g.lib.prop))) mode = 'bouche';   // elle mange, lèche, tire la langue : gros plan sur le visage
   else if (g && g.lib && g.lib.prop) mode = 'objet';
   else if (g && g.lib && (g.lib.l || g.lib.r) && !g.lib.legs) mode = 'mains';
   else if (g && g.lib && (g.lib.legs || g.lib.ground)) mode = 'danse';
@@ -5597,6 +5625,7 @@ function autoCamUpdate(dt) {
   const sw = A.saved ? A.saved.yaw : 0;
   if (mode === 'danse') { CAM.dist = 3.6 * k; CAM.py = -0.3 * k; CAM.px = 0; CAM.pitch = 0.06; CAM.yaw = sw + 0.5 * Math.sin(tt * 0.22); }
   else if (mode === 'objet') { CAM.dist = 1.9 * k; CAM.py = -0.02 * k; CAM.px = 0.08 * k; CAM.pitch = 0.04; CAM.yaw = sw + 0.35; }
+  else if (mode === 'bouche') { let hy = 0.6 * k; try { hy = vrm.humanoid.getNormalizedBoneNode('head').getWorldPosition(_po).y - target.y; } catch (_) {} CAM.dist = 1.05 * k; CAM.py = hy - 0.07 * k; CAM.px = 0; CAM.pitch = 0.03; CAM.yaw = sw + 0.5; }
   else if (mode === 'mains') { CAM.dist = 2.0 * k; CAM.py = 0.02 * k; CAM.px = 0; CAM.pitch = 0.04; CAM.yaw = sw + 0.12 * Math.sin(tt * 0.3); }
   else { CAM.dist = 2.2 * k; CAM.py = 0.1 * k; CAM.px = 0; CAM.pitch = 0.04; CAM.yaw = sw + 0.1 * Math.sin(tt * 0.25); }
 }
@@ -5698,6 +5727,7 @@ function applyLib(def, gt, w, b) {
   for (const [hk, side, up, lo, hand, pk] of [['r', 1, b.rArm, b.rLowArm, b.rHand, 'rPole'], ['l', -1, b.lArm, b.lLowArm, b.lHand, 'lPole']]) {
     const keys = def[hk]; if (!keys) continue;
     const tg0 = libKey(keys, gt, side, def.osc || null, gt, def.blend).clone();
+    if (def.eat && def.prop && def.prop.h === hk) eatAdjust(def, gt, tg0);   // aliment : correction mesurée à l'image précédente (l'aliment arrive AU CONTACT de la bouche, au millimètre)
     if (def.circ) {                                             // circumduction : circ [axe A, axe B, rayon (m), fréquence]
       const ax = [_bf.X, _bf.Y, _bf.Z], cc = def.circ, sd = (cc[0] === 0 ? side : 1), sd2 = (cc[1] === 0 ? side : 1);
       tg0.addScaledVector(ax[cc[0]], cc[2] * Math.sin(gt * cc[3]) * sd).addScaledVector(ax[cc[1]], cc[2] * Math.cos(gt * cc[3]) * sd2);
@@ -5742,7 +5772,8 @@ function applyLib(def, gt, w, b) {
         else { surfAimWrist(b, hk, hand, zo, _bf.tg2); tg0.lerp(_bf.tg2, mw); }
       }
     }
-    const tg = pushOut(tg0, def.noPush || tsw > 0.5 ? -1 : 0.032);
+    const tg = pushOut(tg0, def.noPush || tsw > 0.5 || (def.eat && EAT.w > 0.05) ? -1 : 0.032);
+    if (window.__eatDbg) (window.__tgDbg = window.__tgDbg || {})[hk] = tg.clone();
     const pp = def[pk] || [1, -0.7, -0.3];
     _bf.pl.set(0, 0, 0).addScaledVector(_bf.X, pp[0] * side).addScaledVector(_bf.Y, pp[1]).addScaledVector(_bf.Z, pp[2]);
     { // rythme scapulo-huméral : au-delà de ~35° d'élévation, l'omoplate pivote et l'épaule monte (≈ 1/3 du mouvement), comme chez un humain
@@ -6611,6 +6642,142 @@ const ZONE_LABEL = { cuisseint: 'l\'intérieur de ta cuisse', aine: 'ton aine', 
 document.querySelectorAll('[data-handtemp]').forEach((c) => c.addEventListener('click', () => {   // température de ta main (le ressenti au contact en dépend)
   TLIVE.temp = +c.dataset.handtemp; document.querySelectorAll('[data-handtemp]').forEach((x) => x.classList.toggle('on', x === c)); }));
 
+/* ══ BOUCHE : tirer la langue, lécher une glace, croquer une pomme, mâcher, avaler ══
+   Ce qu'en dit la recherche (appliqué ici) :
+   - mastication humaine : ≈ 1,46 cycle par seconde (± 0,21), une vingtaine de cycles par bouchée en moyenne ; la mâchoire s'ouvre presque droit
+     puis se REFERME déportée du côté qui mâche (trajet « en goutte ») ; l'amplitude diminue quand l'aliment ramollit ; les lèvres restent jointes ;
+   - langue sortie : FACS AU19 (MetaHuman « tongueOut ») ; son visage n'a qu'une forme de langue (sortie) : le balayage du coup de langue vient
+     donc d'un petit mouvement de tête, langue tirée, comme on le fait vraiment sur une glace ;
+   - parole : modèle JALI (mâchoire et lèvres pilotées séparément) → la mâchoire suit le volume réel de la voix (voir la boucle).
+   PRÉCISION : l'aliment est amené AU CONTACT MESURÉ — la boule de glace sous le bout RÉEL de la langue (sommet du maillage, morphing + squelette),
+   la pomme contre la lèvre du haut (point réel de la peau) — par un correcteur qui compare à chaque image où est l'aliment et où il doit être
+   (même principe que ses mains sur sa peau). L'ouverture de la bouche est réglée sur la taille de ce qu'elle croque. */
+const EAT = { corr: new THREE.Vector3(), app: new THREE.Vector3(), w: 0, tongue: null, tipIdx: -1, tip: new THREE.Vector3(), licks: 0, bites: 0, dirty: false, gap: null,
+  _a: new THREE.Vector3(), _q: new THREE.Quaternion(), _f: new THREE.Vector3(), _u: new THREE.Vector3(), _l: new THREE.Vector3(), _c: new THREE.Vector3(), _d: new THREE.Vector3(), _o: {} };
+const _ss = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+function eatAdjust(def, gt, tg0) { if (EAT.w > 0.001 && !window.__noEat) { EAT.app.copy(EAT.corr).multiplyScalar(EAT.w); tg0.add(EAT.app); } }   // (dans applyLib) la main qui tient l'aliment reçoit la correction mesurée à l'image d'avant
+function eatTip(out) {                   // le bout RÉEL de sa langue, dans le monde : le sommet le plus en avant quand elle la tire (trouvé une fois), puis suivi image par image
+  if (!EAT.tongue) { vrm.scene.traverse((o) => { if (!EAT.tongue && o.isMesh && /tongue/i.test(o.name) && o.morphTargetDictionary && o.morphTargetDictionary.tongueOut !== undefined) EAT.tongue = o; }); if (!EAT.tongue) return false; }
+  const m = EAT.tongue;
+  if (EAT.tipIdx < 0) {
+    const inf = m.morphTargetInfluences, sv = Array.from(inf), n = m.geometry.attributes.position.count, v = new THREE.Vector3(); let best = -1e9;
+    inf.fill(0); inf[m.morphTargetDictionary.tongueOut] = 1;
+    for (let i = 0; i < n; i++) { m.getVertexPosition(i, v); m.localToWorld(v); const d = v.sub(EAT._a).dot(EAT._f); if (d > best) { best = d; EAT.tipIdx = i; } }
+    for (let i = 0; i < inf.length; i++) inf[i] = sv[i];
+  }
+  m.getVertexPosition(EAT.tipIdx, out); m.localToWorld(out); return true;
+}
+function propBite(mesh, dirW, k) {       // une bouchée CREUSE la pomme : les sommets pris dans la morsure reculent sur une cavité ronde, la chair apparaît
+  const ch = mesh.getObjectByName('chair'); if (!ch) return;
+  const d = dirW.clone().applyQuaternion(mesh.getWorldQuaternion(new THREE.Quaternion()).invert()); d.y /= ch.scale.y; d.normalize();
+  if (k) d.applyAxisAngle(new THREE.Vector3(0, 1, 0), (k % 2 ? 0.62 : -0.62) * Math.ceil(k / 2));           // elle tourne un peu la pomme : chaque bouchée à côté de la précédente
+  const R = 0.034, rc0 = 0.0195, cc = d.clone().multiplyScalar(R + 0.0035), P = ch.geometry.attributes.position, C = ch.geometry.attributes.color, v = new THREE.Vector3(), w = new THREE.Vector3();
+  const ex = new THREE.Vector3(0, 1, 0).cross(d).normalize(); if (ex.lengthSq() < 0.5) ex.set(1, 0, 0); const ey = new THREE.Vector3().crossVectors(d, ex);
+  for (let i = 0; i < P.count; i++) {
+    v.fromBufferAttribute(P, i); w.subVectors(v, cc); const dist = w.length();
+    const th = Math.atan2(w.dot(ey), w.dot(ex)), rc = rc0 * (1 + 0.035 * Math.cos(th * 9));   // traces des dents : le bord de la morsure est festonné (≈ 9 empreintes sur le tour)
+    if (dist < rc) { w.multiplyScalar(rc / Math.max(1e-6, dist)); v.copy(cc).add(w); P.setXYZ(i, v.x, v.y, v.z); const j = 0.9 + 0.1 * Math.sin(i * 7.3); C.setXYZ(i, 0.96 * j, 0.92 * j, 0.74 * j); }
+    else if (dist < rc * 1.06) C.setXYZ(i, 0.82, 0.66, 0.44);                                               // le bord de la morsure (peau déchirée)
+  }
+  P.needsUpdate = true; C.needsUpdate = true; ch.geometry.computeVertexNormals();
+}
+function eatTrack(b, dt, lib, gt, lw) {  // passe différée (après la prise de l'objet) : mesure, correction, bouchées et coups de langue
+  const S = PROPS_ST, E = lib && lib.eat;
+  if (!E || !S.held || !S.mesh || !b.head || S.name !== lib.prop.n) {
+    EAT.w = 0; EAT.corr.multiplyScalar(Math.max(0, 1 - dt * 6)); EAT.gap = null;
+    if (E && gt < 0.5 && EAT.dirty && S.name === lib.prop.n) { if (S.mesh && S.mesh.parent) S.mesh.parent.remove(S.mesh); S.mesh = null; EAT.dirty = false; EAT.licks = 0; EAT.bites = 0; }   // elle en reprend : un aliment neuf
+    return;
+  }
+  let w = 0; for (const [a, z] of E.wins) w = Math.max(w, Math.max(0, Math.min(1, (gt - a) / 0.4)) * Math.max(0, Math.min(1, (z - gt) / 0.3)));
+  EAT.w = w * lw;
+  if (w <= 0.001) { EAT.corr.multiplyScalar(Math.max(0, 1 - dt * 5)); EAT.gap = null; return; }
+  b.head.updateWorldMatrix(true, false);
+  const A = b.head.getWorldPosition(EAT._a), q = b.head.getWorldQuaternion(EAT._q), F = EAT._f.set(0, 0, 1).applyQuaternion(q), U = EAT._u.set(0, 1, 0).applyQuaternion(q);
+  const L = EAT._l.copy(A).addScaledVector(U, -0.022).addScaledVector(F, 0.12);                             // lèvre du haut : point d'auteur, puis le VRAI point de peau le plus proche
+  if (SURF.ok) { SURF.dirty = true; surfUpdate(); if (surfClosest(L, 0, EAT._o, 0.06) !== null) L.copy(EAT._o.point); }
+  S.mesh.updateMatrixWorld(true);
+  const C = EAT._c, D = EAT._d; let gap = null;
+  if (E.kind === 'glace') {
+    const boule = S.mesh.getObjectByName('boule'), n = E.licks.filter((k) => gt >= k[1]).length;
+    if (n !== EAT.licks) { EAT.licks = n; EAT.dirty = true; const sc = 1 - 0.055 * n; boule.scale.set(sc, sc * 0.97, sc); S.mesh.updateMatrixWorld(true); }   // chaque coup de langue en emporte un peu
+    const r = 0.03 * boule.scale.x; boule.getWorldPosition(C);
+    const tOk = eatTip(EAT.tip), m = EAT.tongue, tw = tOk ? m.morphTargetInfluences[m.morphTargetDictionary.tongueOut] : 0, s = _ss(0.3, 0.85, tw);
+    let th = -0.4; for (const [a, z] of E.licks) if (gt >= a - 0.25 && gt <= z + 0.2) th = -0.4 + 1.2 * _ss(a, z, gt);   // le coup de langue remonte du bas de la boule vers son sommet
+    D.copy(L).addScaledVector(F, r + 0.02).addScaledVector(U, -0.014);                                      // entre deux coups : la boule à 2 cm des lèvres
+    if (tOk && s > 0) { const X = EAT.tip.clone().addScaledVector(F, r * Math.cos(th) - 0.0015).addScaledVector(U, -r * Math.sin(th)); D.lerp(X, s); if (s > 0.95) gap = EAT.tip.distanceTo(C) - r; }
+  } else {
+    C.copy(S.mesh.position); const R = 0.034;
+    D.copy(L).addScaledVector(F, R - 0.007).addScaledVector(U, -0.015);                                      // la pomme contre la bouche ouverte, les dents du haut déjà dans la chair
+    gap = L.distanceTo(C) - R;
+    while (EAT.bites < E.bites.length && gt >= E.bites[EAT.bites]) { propBite(S.mesh, L.clone().addScaledVector(U, -0.012).sub(C).normalize(), EAT.bites); EAT.bites++; EAT.dirty = true; }
+  }
+  // correction DIRECTE (pas d'intégrale, donc pas d'emballement quand le poids monte) : où serait l'aliment SANS correction (C − ce qui a été appliqué),
+  // et l'écart qui reste jusqu'au point voulu ; lissée sur ~80 ms. (L'intégrale dépassait de 3 cm dans la bouche pendant le fondu d'entrée, mesuré.)
+  const want = D.sub(C).add(EAT.app); EAT.corr.lerp(want, Math.min(1, dt * 12)); if (EAT.corr.length() > 0.16) EAT.corr.setLength(0.16); EAT.app.set(0, 0, 0);
+  EAT.gap = gap;
+  if (window.__eatDbg) { const P = new THREE.Vector3(), N = new THREE.Vector3(); palmPoint(b, 'r', b.rHand, P, N); EAT.dbg = { P, N, up: new THREE.Vector3(0, 1, 0).applyQuaternion(S.mesh.quaternion), wr: rawOf(b.rHand).getWorldPosition(new THREE.Vector3()), el: rawOf(b.rLowArm).getWorldPosition(new THREE.Vector3()), wn: b.rHand.getWorldPosition(new THREE.Vector3()), sh: rawOf(b.rArm).getWorldPosition(new THREE.Vector3()), tg: window.__tgDbg && window.__tgDbg.r }; }
+  if (window.__eatLog) window.__eatLog.push({ t: +gt.toFixed(3), gap: gap === null ? null : +(gap * 1000).toFixed(2), err: +(D.length() * 1000).toFixed(2), w: +w.toFixed(2) });
+}
+/* Mastication : n cycles à partir de t0 ; côté : +1 droite, −1 gauche. Renvoie [images-clés du visage, instant de fin]. */
+function chewSeq(t0, n, side) {
+  const K = [], P = 0.69; let t = t0;
+  for (let i = 0; i < n; i++) {
+    const a = 1.05 - 0.45 * (i / Math.max(1, n - 1)), lat = (i % 5 === 4 ? -side : side) > 0 ? 'mach_d' : 'mach_g';   // amplitude qui décroît ; elle change de côté de temps en temps
+    K.push([t, { mache: 0.1, joues: 0.5 }]);                              // dents serrées
+    K.push([t + P * 0.34, { mache: a, joues: 0.5, [lat]: 0.25 }]);       // ouverture, presque droite
+    K.push([t + P * 0.62, { mache: a * 0.45, joues: 0.5, [lat]: 0.9 }]); // fermeture déportée du côté qui mâche
+    K.push([t + P * 0.86, { mache: 0.08, joues: 0.5, [lat]: 0.2 }]);     // écrasement, retour au centre
+    t += P * (0.94 + 0.12 * ((i * 7) % 5) / 4);                          // rythme humain : jamais parfaitement régulier
+  }
+  K.push([t, { mache: 0.08, joues: 0.4 }]);
+  return [K, t];
+}
+(function () {
+  const rest = ['sh', [0.2, -0.4, 0.05]], lean = (a, nk) => ({ spine: [a, 0, 0], chest: [a * 0.4, 0, 0], neck: [nk || 0, 0, 0] });
+  const build = (name, n, shape, ty, use, e, fkMid, extra) => {            // prendre sur la table → porter à la bouche → reposer (même schéma que boire, lire…)
+    const table = [0.2, ty, 0.34], above = [0.2, ty + 0.11, 0.33];
+    // Coude LEVÉ sur le côté (comme on porte vraiment quelque chose à la bouche) : coude bas, l'avant-bras butait contre sa poitrine et le poignet restait à 20 cm de la cible (mesuré).
+    // Avant-bras tourné (rTwist) : la paume regarde son visage, l'aliment est entre la paume et la bouche. Devant la bouche, la cible n'est plus repoussée par le gabarit du buste (seulement pendant le réglage fin).
+    GLIB[name] = Object.assign({ dur: e + 2.6, blend: true, prop: { n, h: 'r', on: 1.45, off: e + 1.3, tilt: [[0, 0]] }, rPole: [1, 0.1, 0.25],
+      rTwist: [[0, 0], [1.7, 0], [use[0][0] - 0.1, 1.6], [e, 1.6], [e + 0.7, 0]],
+      r: [[0, ...rest], [0.9, 'hips', above], [1.3, 'hips', table], [1.6, 'hips', table], ...use, [e + 0.8, 'hips', above], [e + 1.15, 'hips', table], [e + 1.5, 'hips', above], [e + 2.2, ...rest]],
+      rHand: [[0, 'open'], [1.0, 'open'], [1.5, shape], [e + 1.2, shape], [e + 1.5, 'open']],
+      fk: [[0, {}], [0.9, lean(0.22)], [1.7, lean(0.05)], ...fkMid, [e + 0.6, lean(0.04)], [e + 1.2, lean(0.22)], [e + 2.4, {}]] }, extra);
+  };
+  // ── tirer la langue (espiègle) ──
+  GLIB.langue = { dur: 3.4, head: [0.03, 0, 0.1], fk: [[0, {}], [3.4, {}]],
+    faceSeq: [[0, {}], [0.35, { langue: 0.2 }], [0.7, { langue: 1, miam: 0.5 }], [2.0, { langue: 1, miam: 0.6 }], [2.4, { langue: 0.1, miam: 0.7 }], [3.0, { miam: 0.3 }], [3.4, {}]] };
+  // ── lécher une glace : 5 coups de langue, la boule rapetisse ──
+  {
+    const M = [0.075, -0.092, 0.217], licks = [], face = [[0, {}], [2.2, {}]], fk = []; let t = 2.9;
+    for (let i = 0; i < 5; i++) {
+      licks.push([t + 0.22, t + 0.8]);
+      face.push([t, { leche: 0.1 }], [t + 0.22, { leche: 1 }], [t + 0.8, { leche: 1 }], [t + 1.0, { leche: 0.05, miam: 0.5 }], [t + 1.25, { miam: 0.35 }]);
+      fk.push([t + 0.1, lean(0.05, 0.1)], [t + 0.8, lean(0.05, -0.06)], [t + 1.2, lean(0.05, 0.03)]);   // menton rentré → menton levé, langue tirée : le coup de langue remonte la boule
+      t += 1.3;
+    }
+    const e = t + 0.2; face.push([e + 0.3, { miam: 0.9 }], [e + 1.6, { miam: 0.3 }], [e + 2.6, {}]);
+    build('glace', 'glace', 'asl-c', 0.03, [[2.5, 'head', M], [e, 'head', M]], e, fk, { faceSeq: face, eat: { kind: 'glace', wins: [[2.2, e + 0.1]], licks } });
+    GLIB.glace.prop.tilt = [[0, 0], [2.0, 0], [2.6, 0.3], [e - 0.1, 0.3], [e + 0.5, 0]];
+  }
+  // ── croquer une pomme : 2 bouchées, chacune mâchée (10 puis 8 cycles) puis avalée ──
+  {
+    const M = [0.075, -0.02, 0.19], H = ['sh', [0.16, -0.2, 0.24]], face = [[0, {}], [2.0, {}]], use = [], wins = [], bites = []; let t = 2.75;
+    for (const n of [10, 8]) {
+      use.push([t - 0.4, 'head', M], [t + 0.6, 'head', M], [t + 1.2, ...H]);         // la main ARRIVE devant la bouche avant que le réglage fin commence
+      wins.push([t - 0.35, t + 0.7]); bites.push(t + 0.38);                            // au contact pendant toute la morsure ; elle ne s'éloigne qu'après
+      face.push([t - 0.5, { bouchee: 0.1 }], [t - 0.05, { bouchee: 1 }], [t + 0.3, { bouchee: 1 }], [t + 0.44, { mache: 0.3, joues: 0.6 }]);   // la bouche s'ouvre à la taille de la pomme, puis les dents se referment : la bouchée part
+      const [K, end] = chewSeq(t + 0.62, n, bites.length % 2 ? 1 : -1); face.push(...K);
+      face.push([end + 0.2, { swallow: 1 }], [end + 0.55, { swallow: 0.4 }], [end + 0.9, { miam: 0.7 }], [end + 1.3, { miam: 0.3 }]);          // elle avale
+      use.push([end + 1.0, ...H]); t = end + 1.9;
+    }
+    const e = t - 0.6; face.push([e + 1.5, { miam: 0.5 }], [e + 2.6, {}]);
+    build('manger', 'pomme', 'asl-c', -0.025, use, e, [], { faceSeq: face, head: [0.02, 0, 0], eat: { kind: 'pomme', wins, bites } });
+  }
+  Object.assign(GLIB_FR, { 'langue': 'langue', 'tire-la-langue': 'langue', 'glace': 'glace', 'cornet': 'glace', 'creme-glacee': 'glace', 'pomme': 'manger', 'mange': 'manger', 'manges': 'manger', 'manger': 'manger', 'croque': 'manger', 'croquer': 'manger' });
+})();
+
 /* ── auto-réparation : la boucle ne s'arrête jamais ; os corrompus, geste bloqué ou erreur → retour à un état sain, incident noté ── */
 /* ── formes correctives du bassin (pose space deformation) : selon l'ouverture et la flexion de chaque cuisse,
    la peau de l'aine, des fesses et de l'entrejambe est corrigée (générées dans Blender par « Corrective Smooth ») ── */
@@ -6757,6 +6924,15 @@ function animateFrame() {
     const lH = lib && lib.head ? lib.head : null, lS = lib && lib.spine ? lib.spine : null;
     if (lib && lib.face) { if (libFace !== lib.face[0] && libFace) setExpr(libFace, 0); libFace = lib.face[0]; setExpr(libFace, lib.face[1] * lw); }
     else if (libFace) { setExpr(libFace, 0); libFace = null; }
+    if (lib && lib.faceSeq) {                          // visage IMAGE PAR IMAGE (langue, croquer, mâcher…) : [[temps, {expression: poids}], …], fondu entre deux étapes
+      const sq = lib.faceSeq; let i = 0; while (i + 1 < sq.length && sq[i + 1][0] <= gt) i++;
+      const A = sq[i], B = sq[i + 1], T = {};
+      let f = B ? (gt - A[0]) / Math.max(1e-3, B[0] - A[0]) : 0; f = Math.max(0, Math.min(1, f)); f = f * f * (3 - 2 * f);
+      for (const k in A[1]) T[k] = A[1][k] * (1 - f);
+      if (B) for (const k in B[1]) T[k] = (T[k] || 0) + B[1][k] * f;
+      for (const k in libFaceSet) if (!(k in T)) { setExpr(k, 0); delete libFaceSet[k]; }
+      for (const k in T) { libFaceSet[k] = 1; setExpr(k, T[k] * lw); }
+    } else { for (const k in libFaceSet) { setExpr(k, 0); delete libFaceSet[k]; } }
     const up = 1 - poseCur.lie;                       // allongée : pas de gestes du buste ni des bras
     const ew = emotion ? Math.min(1, emotionW * 1.8) : 0;
     const eSad = emotion === 'sad' ? ew : 0, eSur = emotion === 'surprised' ? ew : 0, eHap = emotion === 'happy' ? ew : 0, eAng = emotion === 'angry' ? ew : 0;
@@ -6937,8 +7113,10 @@ function animateFrame() {
       let any = 0;
       for (const v of LIP_V) { lip.cur[v] += (((T[v] || 0) * gate) - lip.cur[v]) * k; any += lip.cur[v]; }
       setVisemes();
+      { const c = lip.cur, vow = c.aa + 0.6 * c.E + 0.5 * c.O + 0.3 * c.I + 0.3 * c.U;          // JALI : la mâchoire suit le VOLUME réel sur les voyelles (voix forte = bouche plus ouverte), les lèvres gardent leurs formes
+        setExpr('jali', mouthOn && lipEnv && lipEnv.url === playerURL ? Math.min(0.3, vow * mouthV * 0.3) : 0); }
       mouthWas = mouthOn || any > 0.01;
-      if (!mouthWas) { for (const v of LIP_V) lip.cur[v] = 0; setVisemes(); mouthV = 0; }
+      if (!mouthWas) { for (const v of LIP_V) lip.cur[v] = 0; setVisemes(); setExpr('jali', 0); mouthV = 0; }
     }
     // émotion qui s'estompe
     if (emotion) {
@@ -7013,6 +7191,7 @@ function animateFrame() {
       else if (SLOCK[hk] || HGOAL[hk]) { SLOCK[hk] = null; HGOAL[hk] = null; }
       SURFREQ[hk] = null; }
     try { if (propGrasp(b, dt)) _srDone = true; } catch (e) { if (window.__tlErr) console.warn('prise', e); }   // objet tenu : doigts refermés sur sa vraie surface
+    try { eatTrack(b, dt, lib, gt, lw); } catch (e) { if (window.__tlErr) console.warn('manger', e); }   // aliment : amené au contact exact des lèvres ou de la langue
     if (lib && lw > 0.3 && lib.legFollow && gt > lib.legFollow.a + 0.3 && !window.__noGrasp) { const hk2 = lib.legFollow.hk; try { fingersToSurface(b, hk2, 1, dt, (p) => surfClosest(p, hk2 === 'l' ? 1 : 2, null, 0.12)); _srDone = true; } catch (_) {} }   // jambe portée : les doigts S'ENROULENT autour de la cheville (prise fermée, pouce en face)
     PERF.cur.mains += performance.now() - _pm;
     if (_srDone) { _srDone = false; try { vrm.humanoid.update(); if (vrm.nodeConstraintManager) vrm.nodeConstraintManager.update(); } catch (_) {} }   // CRUCIAL : vrm.update() a déjà copié le rig normalisé vers le vrai squelette AVANT nos corrections de main ; sans cette recopie, tout ce que la passe différée fait (paume, doigts) est calculé… et jamais affiché (bug vu : doigts raides à l'écran, mesures « parfaites » dans le vide)

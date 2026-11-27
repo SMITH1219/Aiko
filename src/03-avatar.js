@@ -50,6 +50,15 @@ const GLB_EXPR = {
   v_kk: { viseme_kk: 1, jawOpen: 0.04 }, v_CH: { viseme_CH: 1 }, v_SS: { viseme_SS: 1 }, v_nn: { viseme_nn: 1 },
   v_RR: { viseme_RR: 1 }, v_aa: { viseme_aa: 1, jawOpen: 0.12 }, v_E: { viseme_E: 1, jawOpen: 0.04 },
   v_I: { viseme_I: 1 }, v_O: { viseme_O: 1, jawOpen: 0.06 }, v_U: { viseme_U: 1 },
+  // bouche qui mange et langue : pilotées image par image par les gestes (faceSeq) — tirer la langue, lécher, croquer, mâcher
+  langue: { tongueOut: 1, jawOpen: 0.3, mouthFunnel: 0.08 },                                   // tirer la langue
+  leche: { tongueOut: 1, jawOpen: 0.42, mouthUpperUpLeft: 0.15, mouthUpperUpRight: 0.15 },    // langue sortie pour lécher, lèvre du haut dégagée
+  bouchee: { jawOpen: 0.62, mouthUpperUpLeft: 0.25, mouthUpperUpRight: 0.25, mouthLowerDownLeft: 0.25, mouthLowerDownRight: 0.25 },   // grande ouverture, dents découvertes, juste avant de croquer
+  mache: { jawOpen: 0.2, mouthClose: 0.2, mouthPressLeft: 0.12, mouthPressRight: 0.12 },       // mâcher bouche fermée : la mâchoire descend, les lèvres restent jointes
+  mach_g: { jawLeft: 0.55 }, mach_d: { jawRight: 0.55 },                                       // déport latéral de la mâchoire (le côté qui mâche)
+  joues: { cheekPuff: 0.3 },                                                                   // joues pleines
+  miam: { mouthSmileLeft: 0.4, mouthSmileRight: 0.4, eyeSquintLeft: 0.35, eyeSquintRight: 0.35, cheekSquintLeft: 0.3, cheekSquintRight: 0.3 },
+  jali: { jawOpen: 1 },                                                                        // parole : part de MÂCHOIRE pilotée par le volume réel de la voix (modèle JALI : mâchoire et lèvres séparées)
 };
 const GLB_BASE = { mouthSmileLeft: 0.1, mouthSmileRight: 0.1 };   // visage au repos : un soupçon de sourire
 function makeGlbAvatar(gltf) {
@@ -145,6 +154,7 @@ function setRealistic(on) {
         for (const k of ['map', 'normalMap', 'roughnessMap']) if (m[k]) { m[k].anisotropy = aniso; m[k].needsUpdate = true; }
         if (m.alphaTest > 0) m.alphaToCoverage = true;          // bords des cheveux adoucis
         if ('envMapIntensity' in m) m.envMapIntensity = /hair/i.test(o.name) ? 0.55 : 0.9;
+        if (/tongue/i.test(o.name)) { m.color.setHex(0xf0a4a4); m.roughness = 0.36; }   // langue : rose plus soutenu et humide (salive) — sa texture d'origine sortait presque blanche sous la lumière
         m.needsUpdate = true;
       }
     });

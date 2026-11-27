@@ -71,6 +71,14 @@ async def main():
         await pg.evaluate("(c)=>__T.runCodeTool({server:'Code',tool:'proposer',input:{type:'geste',titre:'essai',contenu:c}})",g)
         st=await pg.evaluate("(()=>{const p=__T.amelProps().find(x=>x.nom==='essai-geste'); const a=['essai-geste' in __T.GLIB]; __T.amelApply(p); a.push('essai-geste' in __T.GLIB, __T.GLIB['essai-geste'].fk[1][1].spine[0]); __T.amelUndo(p); a.push('essai-geste' in __T.GLIB); return a})()")
         ok('proposition : rien sans accord, puis appliquée (angles bornés), puis annulée',st==[False,True,0.9,False],st)
+        # 9 bouche : tirer la langue (image par image), mastication au rythme humain, aliments prêts
+        r=await pg.evaluate("""(()=>{ window.__nogest=1; window.__freeze=1; window.__dt=1/60; window.__nogest=0; __T.playGesture('langue'); window.__nogest=1;
+          for(let i=0;i<90;i++) __T.animateFrame(); let t=null; __T.vrmRef().scene.traverse(o=>{ if(o.isMesh&&/tongue/i.test(o.name)) t=o; });
+          const L=t?+t.morphTargetInfluences[t.morphTargetDictionary.tongueOut].toFixed(2):-1;
+          const sq=__T.GLIB.manger.faceSeq, up=[]; for(let i=1;i<sq.length;i++){ const a=(sq[i-1][1].mache||0), b=(sq[i][1].mache||0); if(a<0.3&&b>=0.3&&sq[i][1].joues) up.push(sq[i][0]); }
+          const seg=up.filter((x,i)=>i&&x-up[i-1]<1.2).length, span=up.reduce((s,x,i)=>i&&x-up[i-1]<1.2?s+x-up[i-1]:s,0);
+          window.__freeze=0; window.__dt=0; return JSON.stringify({langue:L, hz:+(seg/span).toFixed(2), bouchees:__T.GLIB.manger.eat.bites.length, coups:__T.GLIB.glace.eat.licks.length}); })()""")
+        r=json.loads(r); ok('bouche : langue tirée, mastication ≈ 1,46 Hz (mesures humaines), 2 bouchées, 5 coups de langue',r['langue']>0.9 and 1.25<=r['hz']<=1.7 and r['bouchees']==2 and r['coups']==5,r)
         ok('aucune erreur JS',not pg.errs,pg.errs); await pg.close(); await br.close()
 subprocess.run([sys.executable,os.path.join(ROOT,'build.py'),'--test'],check=True,stdout=subprocess.DEVNULL)
 srv=http.server.ThreadingHTTPServer(('localhost',PORT),functools.partial(type('Q',(http.server.SimpleHTTPRequestHandler,),{'log_message':lambda *a:None}),directory=ROOT))
