@@ -92,6 +92,64 @@ async def main():
         ok('lèvres closes sur chaque p/b/m (forme PP ≥ 0,95)',len(r['ferm'])>=6 and min(r['ferm'])>=0.95,r['ferm'])
         ok('langue : formes créées (pointe, côtés) + formes d\'origine intactes',all(k in r['langue'] for k in ['tongueOut','viseme_DD','tongueTipUp','tongueLeft','tongueRight']),r['langue'])
         ok('émotion : montée progressive (≈ 0,5 s pour un sourire), pas de saut',r['sourire'][0]<0.5 and r['sourire'][-1]>0.75 and all(b>=a-0.02 for a,b in zip(r['sourire'],r['sourire'][1:])),r['sourire'])
+        # 11 contact : la chair se creuse sous le doigt et se referme quand on lache
+        pos=await pg.evaluate("""()=>{ const V=__T.THREE.Vector3, pn=performance.now.bind(performance);
+          window.__vt=pn(); performance.now=()=>window.__vt; window.__freeze=1; window.__dt=1/60;   // corps fige : la cible ne bouge plus sous le doigt
+          __T.TLIVE.mode=1; window.__nogest=1; window.__noautocam=1;
+          document.querySelectorAll('#log,#chat-form,header,#topbar,.top,#panel').forEach(e=>e.style.display='none');
+          const pas=()=>{ window.__vt+=1000/60; __T.animateFrame(); };
+          for(let i=0;i<60;i++) pas();
+          const C=__T.CAM, hy=__T.vrmRef().humanoid.getNormalizedBoneNode('hips').getWorldPosition(new V()).y;
+          C.dist=1.0; C.yaw=0.0; C.pitch=0.02; C.px=0; C.py=hy+0.30-__T.target.y;
+          for(let i=0;i<240;i++) pas();                 // la camera glisse vers sa cible : on la laisse arriver, sinon le doigt rate
+          const W=window.innerWidth, H=window.innerHeight;
+          const pts=[];
+          for(let y=Math.round(H*0.2); y<H*0.75; y+=4)
+            for(let x=Math.round(W*0.25); x<W*0.75; x+=4){
+              const h=__T.tlPick(x,y); if(h && __T.tlZone(h)==='poitrine') pts.push([x,y]);
+            }
+          if(!pts.length) return null;
+          // centre de la zone : un point de bord basculerait sur l'epaule au moindre deplacement
+          const cx=Math.round(pts.reduce((s,p)=>s+p[0],0)/pts.length), cy=Math.round(pts.reduce((s,p)=>s+p[1],0)/pts.length);
+          let best=pts[0], bd=1e9;
+          for(const p of pts){ const d=(p[0]-cx)**2+(p[1]-cy)**2; if(d<bd){ bd=d; best=p; } }
+          return __T.tlZone(__T.tlPick(best[0],best[1]))==='poitrine' ? best : pts[Math.floor(pts.length/2)]; }""")
+        if pos:
+            await pg.mouse.move(pos[0],pos[1]); await pg.mouse.down()
+            app=await pg.evaluate("""()=>{ for(let i=0;i<70;i++){ window.__vt+=1000/60; __T.animateFrame(); }
+              return { zone:(__T.TLIVE.act||{}).zone||'aucune', prof:window.__TOUCH.uTc.value[0].w*1000, rayon:window.__TOUCH.uTn.value[0].w*1000 }; }""")
+            await pg.mouse.up()
+            rel=await pg.evaluate("""()=>{ for(let i=0;i<120;i++){ window.__vt+=1000/60; __T.animateFrame(); }
+              const v=window.__TOUCH.uTc.value[0].w*1000; const pn=performance.now; window.__freeze=0; window.__dt=0; return v; }""")
+        else:
+            app={'zone':'aucun point de poitrine a l ecran','prof':0,'rayon':0}; rel=0
+        ok('contact : la chair se creuse sous le doigt (3-22 mm) puis se referme',
+           app['zone']=='poitrine' and 3<=app['prof']<=22 and 20<=app['rayon']<=45 and rel<app['prof']*0.5,
+           {'zone':app['zone'],'creux_mm':round(app['prof'],2),'rayon_mm':round(app['rayon'],1),'apres_relache_mm':round(rel,2)})
+        # 12 ballottement de la poitrine : amplitude et repartition par axe conformes aux mesures humaines
+        #    (Scurr, 21 participantes bonnet D : resultante 15,2 +/- 4,2 cm en course, dont ~56 % de vertical)
+        r=json.loads(await pg.evaluate("""(async ()=>{ const pn=performance.now.bind(performance); window.__vt=pn(); performance.now=()=>window.__vt; window.__freeze=1; window.__dt=1/60;
+          window.__nogest=0; window.__noautocam=1;
+          const V=__T.THREE.Vector3, vrm=__T.vrmRef();
+          const chest=vrm.humanoid.getNormalizedBoneNode('chest')||vrm.humanoid.getNormalizedBoneNode('upperChest')||vrm.humanoid.getNormalizedBoneNode('spine');
+          const hips=vrm.humanoid.getNormalizedBoneNode('hips');
+          let tip=null; vrm.scene.traverse(o=>{ if(o.isBone&&o.name==='LeftBreast') tip=o; });
+          const step=n=>{ for(let i=0;i<n;i++){ window.__vt+=1000/60; __T.animateFrame(); } };
+          const bouge=()=>{ const y0=hips.getWorldPosition(new V()).y; let lo=y0, hi=y0; for(let i=0;i<40;i++){ step(1); const y=hips.getWorldPosition(new V()).y; lo=Math.min(lo,y); hi=Math.max(hi,y); } return hi-lo>0.01; };
+          let pret=false;
+          for(let essai=0; essai<25 && !pret; essai++){ __T.libPlay('danse1',{reps:30}); await new Promise(r=>setTimeout(r,400)); pret=bouge(); }
+          if(!pret){ performance.now=pn; window.__freeze=0; window.__dt=0; return JSON.stringify({err:'clip danse1 non joue'}); }
+          const pts=[]; let clamp=0, tot=0;
+          for(let i=0;i<300;i++){ step(1);
+            for(const j of window.__t.jig) if(/Breast/.test(j.bone.name)){ tot++; if(j.off.clone().sub(j.sagOff).length()>j.lim*0.985) clamp++; }
+            const q=chest.getWorldQuaternion(new __T.THREE.Quaternion()).invert();
+            pts.push(tip.localToWorld(new V(0,0.085,0)).sub(chest.getWorldPosition(new V())).applyQuaternion(q).toArray()); }
+          const rng=a=>{ const v=pts.map(p=>p[a]); return (Math.max(...v)-Math.min(...v))*100; };
+          const ml=rng(0), ve=rng(1), ap=rng(2);
+          performance.now=pn; window.__freeze=0; window.__dt=0;
+          return JSON.stringify({res:+Math.hypot(ml,ve,ap).toFixed(1), vert:Math.round(100*ve/(ve+ml+ap)), butee:Math.round(100*clamp/Math.max(1,tot))}); })()"""))
+        ok('ballottement : amplitude humaine (11-19,4 cm), 45-65 % vertical, sans butee seche',
+           not r.get('err') and 11<=r.get('res',0)<=19.4 and 45<=r.get('vert',0)<=65 and r.get('butee',99)<=15, r)
         ok('aucune erreur JS',not pg.errs,pg.errs); await pg.close(); await br.close()
 subprocess.run([sys.executable,os.path.join(ROOT,'build.py'),'--test'],check=True,stdout=subprocess.DEVNULL)
 srv=http.server.ThreadingHTTPServer(('localhost',PORT),functools.partial(type('Q',(http.server.SimpleHTTPRequestHandler,),{'log_message':lambda *a:None}),directory=ROOT))

@@ -872,9 +872,12 @@ function romApply(dt) {
   }
 }
 /* ── Mouvement secondaire : poitrine et fessier suivent l'inertie du corps (ressort amorti), sans jamais exagérer ── */
+// Limites relevees d'apres la mesure : a 0,044 m le sein butait sur la limite 48 % du temps pendant une danse
+// (arret net, mouvement bride). A 0,10 m avec un gain de 1,8 l'amplitude mesuree sur le bout du sein rejoint les valeurs humaines
+// publiees (resultante 15,2 cm en course, dont 56 % de vertical ; Scurr, 21 participantes bonnet D).
 const JIG_DEF = [   // os, raideur, amortissement, limite (m), gain
-  ['LeftBreast', 125, 5.6, 0.044, 2.6], ['RightBreast', 125, 5.6, 0.044, 2.6],   // poitrine lourde : balancement plus ample et plus lent, qui s'amortit en douceur
-  ['LeftButtock', 165, 7.2, 0.032, 2.1], ['RightButtock', 165, 7.2, 0.032, 2.1],   // chair plus souple : l'onde se propage et s'amortit, au lieu d'un petit tremblement sec
+  ['LeftBreast', 125, 5.6, 0.100, 1.8], ['RightBreast', 125, 5.6, 0.100, 1.8],   // poitrine lourde : balancement plus ample et plus lent, qui s'amortit en douceur
+  ['LeftButtock', 165, 7.2, 0.070, 2.1], ['RightButtock', 165, 7.2, 0.070, 2.1],   // chair plus souple : l'onde se propage et s'amortit, au lieu d'un petit tremblement sec
 ];
 const jig = [];
 const _jw = new THREE.Vector3(), _jv = new THREE.Vector3(), _ja = new THREE.Vector3(), _jq = new THREE.Quaternion(), _jd = new THREE.Vector3(), _jn = new THREE.Vector3(), _jr = new THREE.Quaternion();
@@ -918,7 +921,9 @@ function jigUpdate(dt) {
     _ja.applyQuaternion(_jq).multiplyScalar(-j.g * jigGainMul);   // l'inertie tire dans le sens opposé, dosée selon l'énergie du mouvement
     const n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n;
     for (let i = 0; i < n; i++) {                         // intégration semi-implicite, stable
-      j.vel.addScaledVector(_ja, h).addScaledVector(_jw.copy(j.off).sub(j.sagOff), -j.k * h).addScaledVector(j.vel, -j.c * (1 + 2.5 * sup) * h);
+      _jw.copy(j.off).sub(j.sagOff);
+      const st = _jw.length() / j.lim, kk = j.k * (1 + 9 * Math.max(0, st - 0.55) ** 2);   // la chair se raidit quand elle s'etire (collagene) : plus de butee seche
+      j.vel.addScaledVector(_ja, h).addScaledVector(_jw, -kk * h).addScaledVector(j.vel, -j.c * (1 + 2.5 * sup + 1.8 * Math.max(0, st - 0.8)) * h);
       j.off.addScaledVector(j.vel, h);
     }
     _jw.copy(j.off).sub(j.sagOff); if (_jw.length() > j.lim) { j.off.copy(j.sagOff).add(_jw.setLength(j.lim)); j.vel.multiplyScalar(0.5); }

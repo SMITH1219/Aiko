@@ -153,6 +153,21 @@ function tlSelfFeel(zone, style, F, v, dt, side) {
   TLIVE.selfOn = true; TLIVE.side = side; TLIVE.head = /joue|cou|oreille|nuque|tempe|cheveux|machoire/.test(zone) ? 1 : 0;
   return t;
 }
+/* Creux de contact : la chair s'enfonce sous le doigt ou la paume et forme un bourrelet autour.
+   Profondeur d'apres la force : un doigt qui appuie franchement sur un sein s'enfonce de l'ordre du centimetre ;
+   la pince, elle, pince plus profond sur une petite surface. Tout passe par deux points envoyes au shader de peau. */
+const CREUX = [{ d: 0, R: 0 }];
+function tlCreux(A, F, dt) {
+  const T = window.__TOUCH;
+  if (!T) return;
+  const vise = A && A.p && A.n ? Math.min(0.022, 0.004 + F * (A.pinch ? 0.030 : 0.020)) : 0;   // profondeur visee (m)
+  const rayon = A && A.pinch ? 0.018 : 0.034;                                                   // pince : petite surface ; paume : large
+  const c = CREUX[0], k = Math.min(1, dt * (vise > c.d ? 11 : 7));                              // s'enfonce vite, revient un peu plus lentement
+  c.d += (vise - c.d) * k; c.R += (rayon - c.R) * k;
+  if (c.d < 0.0002) { T.uTn.value[0].w = 0; return; }
+  if (A && A.p && A.n) { T.uTc.value[0].set(A.p.x, A.p.y, A.p.z, c.d); T.uTn.value[0].set(A.n.x, A.n.y, A.n.z, c.R); }
+  else T.uTc.value[0].w = c.d;
+}
 /* chaque image : ressenti continu pendant que le doigt est posé, réactions du corps, regard */
 function touchLiveUpdate(dt, b) {
   const A = TLIVE.act, R = TLIVE.react;
@@ -175,7 +190,9 @@ function touchLiveUpdate(dt, b) {
     if (/poitrine|soussein|fesse/.test(A.zone) && (style === 'pose' || A.pinch) && F > 0.15) {   // la chair cède sous l'appui (le jig recule, puis revient quand on lâche)
       const lx = A.p.clone().sub(_bf.anc.hips).dot(_bf.X), pat = A.zone === 'fesse' ? (lx >= 0 ? /^RightButtock/ : /^LeftButtock/) : (lx >= 0 ? /^RightBreast/ : /^LeftBreast/);
       IMPACT.q.push({ pat, v: A.n.clone().negate().multiplyScalar(F * dt * 1.6) }); }
+    tlCreux(A, F, dt);                                   // creux local sous le doigt + bourrelet autour
   } else if (!TLIVE.selfOn) { tlHabit('', dt, false); for (const c in R) R[c] *= Math.exp(-dt * 1.6); }
+  if (!A) tlCreux(null, 0, dt);                          // plus de main : le creux se referme en douceur
   TLIVE.selfOn = false;   // remis à vrai à chaque image où SA main la touche
   // ── réactions du corps (additives, par-dessus sa pose ou son geste en cours)
   const t = performance.now() / 1000, sd = TLIVE.side;

@@ -41,8 +41,8 @@ const rimA = new THREE.DirectionalLight(0x7fd8ff, 0), rimB = new THREE.Direction
 rimA.position.set(-2.2, 1.6, -2.4); rimB.position.set(2.2, 1.4, -2.2);
 scene.add(rimA, rimB);
 
-const camFill = new THREE.DirectionalLight(0xfff1e8, 0.75); scene.add(camFill, camFill.target);
-const rim = new THREE.DirectionalLight(0xffe2d0, 0.55);   // contour pêche doux (l'orange-rouge donnait des fesses rouges vues de dos)
+const camFill = new THREE.DirectionalLight(0xfff1e8, 0.75); scene.add(camFill, camFill.target); window.__camFill = camFill; window.__scene = scene;
+const rim = new THREE.DirectionalLight(0xffe2d0, 0.55); window.__rim = rim;   // contour pêche doux (l'orange-rouge donnait des fesses rouges vues de dos)
 rim.position.set(-2.5, 1.4, -2.2);
 scene.add(rim);
 
