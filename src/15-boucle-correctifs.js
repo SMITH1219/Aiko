@@ -375,7 +375,7 @@ function animateFrame() {
     { const _p = performance.now(); try { touchLiveUpdate(dt, b); } catch (e) { if (window.__tlErr) console.warn('toucher', e); } PERF.cur.toucher += performance.now() - _p; }   // réactions du corps AVANT les gestes : les mains se posent ensuite sur ce corps-là (sinon le bras bougeait sous la main posée)
     if (lib && lw > 0) { applyFk(lib, gt, lw * (1 - poseCur.lie), b); if (lib.ground || (lib.legs && !AIRBORNE.test(gst.name))) groundBody(b, lw * (1 - poseCur.lie), false, !!lib.touch, !!lib.legPlace); applyLib(lib, gt, lw * (1 - poseCur.lie), b); }
     if (gst && gst.clip) { const cw = ge * (1 - poseCur.lie) * (1 - poseCur.sit); applyClip(gst, cw, b);
-      if (clipAir(gst) === null) { if (!AIRBORNE.test(gst.name + ' ' + (gst.en || ''))) groundBody(b, cw); }   // ancien mouvement : posé au sol à chaque image (sauf vrais sauts)
+      if (clipAir(gst) === null) { if (!AIRBORNE.test(gst.name + ' ' + (gst.en || ''))) groundClip(gst, b, cw); }   // ancien mouvement : posé au sol à chaque image, sauf pendant ses vraies phases de vol (course)
       else if (cw < 0.999) groundBody(b, 1);                               // début et fin (raccord avec la pose de repos) : posée au sol d'après la pose réellement affichée
       else { rig.position.y += clipGy(gst); clipPelvis(gst, 1, b); rig.updateMatrixWorld(true); } }   // mouvement préparé : hauteur calculée d'avance (appuis au sol, vrais temps de vol), garde-fou, bassin ajusté
     { // au repos aussi, le pied d'appui touche le sol : le déhanché de repos enfonçait la jambe d'appui de près de 3 cm dans le sol
@@ -386,7 +386,7 @@ function animateFrame() {
     if (gst && gst.clip && gst.clip.fo) { if (poseCur.lie < 0.3 && poseCur.sit < 0.3) clipFeet(gst, ge, b); footLockReset(); }   // mouvement préparé : appuis connus d'avance
     else if (gst && gst.clip && !AIRBORNE.test(gst.name + ' ' + (gst.en || '')) && poseCur.lie < 0.3 && poseCur.sit < 0.3) {
       footLock(b, dt, ge);
-      if (clipAir(gst) === null) groundBody(b, ge * (1 - poseCur.lie) * (1 - poseCur.sit));   // le verrouillage du pied retouche la jambe APRES l'ancrage : on repose au sol (mesure : pieds de -12 a +15 mm en marchant sinon)
+      if (clipAir(gst) === null) groundClip(gst, b, ge * (1 - poseCur.lie) * (1 - poseCur.sit));   // le verrouillage du pied retouche la jambe APRES l'ancrage : on repose au sol (mesure : pieds de -12 a +15 mm en marchant sinon)
     } else footLockReset();
     // la caméra suit doucement le corps quand il se déplace (mouvement de la bibliothèque), puis revient au centre
     { // mouvement terminé, elle est au repos : la pièce se recentre sur elle d'un seul coup (invisible : caméra, sol et lumière la suivent déjà)

@@ -144,7 +144,11 @@ function xfadeApply(b, dt) {
 }
 const _gv = new THREE.Vector3();
 const AIRBORNE = /saut|jump|leap|\bhop\b|flip|roue|cartwheel|tournant|salto|acrobat/i;   // mouvements où les pieds quittent vraiment le sol
-function groundBody(b, w, upOnly, noHands, noRLeg) {   // noHands : gestes de TOUCHER — la main qui va vers le corps n'est pas un appui (vu : elle soulevait tout le corps, bassin 0,20↔0,76 m, boucle)          // le point le plus bas du corps (pieds, genoux, bassin, buste, tête) se pose exactement sur le sol
+function groundBody(b, w, upOnly, noHands, noRLeg) {
+  const m = groundMin(b, noHands, noRLeg);
+  if (isFinite(m) && (!upOnly || m < -0.003)) { rig.position.y -= m * w; rig.updateMatrixWorld(true); }   // upOnly : simple garde-fou (rien ne passe sous le sol), sans recoller au sol
+}
+function groundMin(b, noHands, noRLeg) {   // noHands : gestes de TOUCHER — la main qui va vers le corps n'est pas un appui (vu : elle soulevait tout le corps, bassin 0,20↔0,76 m, boucle)          // le point le plus bas du corps (pieds, genoux, bassin, buste, tête) se pose exactement sur le sol
   rig.updateMatrixWorld(true);
   const fy = body.anchL ? body.anchL.y : 0.07;
   const C = [[b.lFoot, fy], [b.rFoot, fy], [b.lToes, 0.009], [b.rToes, 0.009], [b.lLowLeg, 0.075], [b.rLowLeg, 0.075], [b.lUpLeg, 0.13], [b.rUpLeg, 0.13], [b.hips, 0.16], [b.chest, 0.135], [b.head, 0.105], [b.spine, 0.1]]   // rayons : volume réel du corps (fesses, poitrine) autour de l'os;
@@ -163,7 +167,74 @@ function groundBody(b, w, upOnly, noHands, noRLeg) {   // noHands : gestes de TO
     for (const k of noRLeg ? ['L'] : ['L', 'R']) for (const i of FP[k]) { const v = M.getVertexPosition(i, _gv).applyMatrix4(M.matrixWorld).y; if (v < m) { m = v; mo = 'peau ' + k; } }
   }
   if (window.__gbLog) window.__gbLog.push([mo, +m.toFixed(3), +rig.position.y.toFixed(3), b.rUpLeg.rotation.toArray().slice(0,3).map((x) => +x.toFixed(2)), +b.rLowLeg.rotation.x.toFixed(2), +b.hips.rotation.x.toFixed(2), +b.hips.position.y.toFixed(3)]);
-  if (isFinite(m) && (!upOnly || m < -0.003)) { rig.position.y -= m * w; rig.updateMatrixWorld(true); }   // upOnly : simple garde-fou (rien ne passe sous le sol), sans recoller au sol
+  return m;
+}
+/* Phases de vol des anciens clips (sans donnees d'appui) : la course se definit par une alternance d'appuis et de vols,
+   au plus un pied au sol (rapport contact/foulee sous 50 %). L'ancrage recollait le corps au sol a chaque image :
+   apres le passage sur la vraie peau des pieds, la course ne quittait plus jamais le sol (mesure le 28/11).
+   On parcourt le clip une fois : pour chaque image, hauteur du point le plus bas au-dessus du sol de la capture.
+   Une image est en vol si les deux pieds sont nettement plus hauts que le sol. En vol, h = hauteur au-dessus de la
+   ligne qui va du decollage a l'atterrissage (comme la preparation des mouvements de la bibliotheque). */
+const FLIGHT_THR = 0.012;
+function clipFlight(c, b) {
+  if (c._flv === vrm && c._fl) return c._fl;
+  c._flv = vrm; c._fl = null;
+  try {
+    const list = [...new Set(Object.values(b).filter((o) => o && o.isObject3D))];
+    const sq = list.map((o) => o.quaternion.clone()), sp = list.map((o) => o.position.clone()), ry = rig.position.clone();
+    const n = c.n, L = new Float32Array(n), g = { clip: c, t: 0, speed: 1 };
+    const FP = body.footPts, M = FP && FP.mesh, V = new THREE.Vector3(), inv = new THREE.Matrix4();
+    const Hk = { L: new Float32Array(n), R: new Float32Array(n) }, Zk = { L: new Float32Array(n), R: new Float32Array(n) };
+    for (let i = 0; i < n; i++) {
+      list.forEach((o, k) => { o.quaternion.copy(sq[k]); o.position.copy(sp[k]); });
+      if (b.hips) b.hips.position.set(body.hipsX || 0, body.hipsY, body.hipsZ || 0);
+      rig.position.set(ry.x, 0, ry.z);
+      g.t = i / c.fps; applyClip(g, 1, b); rig.updateMatrixWorld(true);
+      L[i] = groundMin(b);                                               // (met aussi a jour les os bruts : la peau est a jour)
+      if (FP) {
+        inv.copy(rig.matrixWorld).invert();
+        const hz = b.hips.getWorldPosition(V).applyMatrix4(inv).z;
+        for (const k of ['L', 'R']) { let lo = 1e9, z = 0;
+          for (const j of FP[k]) { M.getVertexPosition(j, V).applyMatrix4(M.matrixWorld); if (V.y < lo) { lo = V.y; z = V.applyMatrix4(inv).z - hz; } }
+          Hk[k][i] = lo; Zk[k][i] = z; }
+      }
+    }
+    list.forEach((o, k) => { o.quaternion.copy(sq[k]); o.position.copy(sp[k]); }); rig.position.copy(ry); rig.updateMatrixWorld(true);
+    // appui d'un pied : il RECULE par rapport au bassin (sur place, c'est le sol qui defile) ET il est pres de son point le plus bas.
+    // Ni l'un ni l'autre ne suffit seul : le pied recule encore juste apres le decollage, et le sol de la capture derive de plusieurs cm.
+    const appui = {};
+    for (const k of ['L', 'R']) {
+      const H = Hk[k], Z = Zk[k], mn = Math.min(...H), dZ = new Float32Array(n);
+      for (let i = 0; i < n; i++) dZ[i] = (Z[(i + 1) % n] - Z[(i - 1 + n) % n]) / 2;
+      let sm_ = 0; for (let i = 0; i < n; i++) if (H[i] - mn < 0.03) sm_ += dZ[i];
+      const sg = sm_ < 0 ? -1 : 1;                                       // sens du recul en appui
+      let vmax = 0; for (let i = 0; i < n; i++) vmax = Math.max(vmax, dZ[i] * sg);
+      appui[k] = Array.from(H, (h, i) => (dZ[i] * sg > 0.3 * vmax && h - mn < 0.05) || h - mn < FLIGHT_THR);   // pied a son plus bas = pose (danse sur place : il ne recule pas)
+    }
+    let air = Array.from({ length: n }, (_, i) => FP ? !appui.L[i] && !appui.R[i] : false);
+    air = air.map((a, i) => a && (air[(i - 1 + n) % n] || air[(i + 1) % n]));   // une image isolee est du bruit, pas un vol
+    const h = new Float32Array(n);
+    for (let i = 0; i < n; i++) if (air[i]) {
+      let a = i, e = i; let guard = 0;
+      while (air[(a - 1 + n) % n] && guard++ < n) a = (a - 1 + n) % n;
+      guard = 0; while (air[(e + 1) % n] && guard++ < n) e = (e + 1) % n;
+      if (air.every((x) => x)) break;
+      const ia = (a - 1 + n) % n, ie = (e + 1) % n, len = ((ie - ia + n) % n) || n, k = ((i - ia + n) % n) / len;
+      h[i] = Math.max(0, L[i] - (L[ia] + (L[ie] - L[ia]) * k));         // au-dessus de la ligne decollage -> atterrissage
+    }
+    if (Math.max(...h) < 0.005) { air.fill(false); h.fill(0); }          // « vol » de moins de 5 mm : pas un vol
+    c._fl = { h, air, part: air.filter(Boolean).length / n };
+  } catch (e) { console.warn('vol', e); c._fl = null; }
+  return c._fl;
+}
+function groundClip(g, b, w) {                                          // ancrage qui respecte les phases de vol du clip
+  const F = clipFlight(g.clip, b), n = g.clip.n;
+  let hv = 0;
+  if (F && g._fr !== undefined) { const f = g._fr, i0 = Math.floor(f) % n, i1 = (i0 + 1) % n, t = f - Math.floor(f); hv = F.h[i0] + (F.h[i1] - F.h[i0]) * t; }
+  const m = groundMin(b);
+  if (!isFinite(m)) return;
+  rig.position.y -= (m - hv) * w;                                       // en appui hv = 0 : exactement l'ancrage habituel
+  rig.updateMatrixWorld(true);
 }
 function applyFk(def, gt, w, b) {      // corps entier : jambes, bassin, buste, et le corps qui tourne ou se baisse
   if (def.fk) {

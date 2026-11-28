@@ -168,19 +168,19 @@ async def main():
           corps.updateWorldMatrix(true,false);
           for(let i=0;i<P.count;i++){ W.fromBufferAttribute(P,i).applyMatrix4(corps.matrixWorld); if(W.y<0.16) idx.push(i); }
           const res={};
-          for(const clip of ['marche','trot']){
+          for(const clip of ['marche','course','trot']){
             __T.playGesture(clip); await new Promise(r=>setTimeout(r,1200));
             for(let i=0;i<50;i++){ window.__vt+=1000/60; __T.animateFrame(); }
-            let lo=1e9, hi=-1e9;
+            let lo=1e9, hi=-1e9, air=0;
             for(let f=0;f<40;f++){ for(let k=0;k<2;k++){ window.__vt+=1000/60; __T.animateFrame(); } corps.updateWorldMatrix(true,false);
               let m=1e9; for(const i of idx){ corps.getVertexPosition(i,W); W.applyMatrix4(corps.matrixWorld); if(W.y<m) m=W.y; }
-              lo=Math.min(lo,m); hi=Math.max(hi,m); }
-            res[clip]=[+(lo*1000).toFixed(1), +(hi*1000).toFixed(1)];
+              lo=Math.min(lo,m); hi=Math.max(hi,m); if(m>0.01) air++; }
+            res[clip]=[+(lo*1000).toFixed(1), +(hi*1000).toFixed(1), Math.round(air/40*100)];
           }
           performance.now=pn; window.__freeze=0; window.__dt=0;
           return JSON.stringify(res); })()"""))
-        ok('pieds au sol : peau a moins de 3 mm du sol en marchant et au trot, sans s y enfoncer',
-           all(-3<=v[0] and v[1]<=3 for v in r.values()), r)
+        ok('pieds au sol : marche collee au sol (+-3 mm), course et trot jamais enfonces avec une vraie phase de vol (15-45 % des images)',
+           -3<=r['marche'][0] and r['marche'][1]<=3 and all(r[c][0]>=-3 and 15<=r[c][2]<=45 for c in ('course','trot')), r)
         ok('aucune erreur JS',not pg.errs,pg.errs); await pg.close(); await br.close()
 subprocess.run([sys.executable,os.path.join(ROOT,'build.py'),'--test'],check=True,stdout=subprocess.DEVNULL)
 srv=http.server.ThreadingHTTPServer(('localhost',PORT),functools.partial(type('Q',(http.server.SimpleHTTPRequestHandler,),{'log_message':lambda *a:None}),directory=ROOT))
