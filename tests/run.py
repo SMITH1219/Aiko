@@ -150,6 +150,16 @@ async def main():
           return JSON.stringify({res:+Math.hypot(ml,ve,ap).toFixed(1), vert:Math.round(100*ve/(ve+ml+ap)), butee:Math.round(100*clamp/Math.max(1,tot))}); })()"""))
         ok('ballottement : amplitude humaine (11-19,4 cm), 45-65 % vertical, sans butee seche',
            not r.get('err') and 11<=r.get('res',0)<=19.4 and 45<=r.get('vert',0)<=65 and r.get('butee',99)<=15, r)
+        # 13 marche lente : vraiment plus lente et moins haute que la marche normale
+        #    (en marche lente le deplacement vertical du centre de masse tombe a environ la moitie de celui
+        #    de la vitesse spontanee ; le clip livre sous ce nom faisait l'inverse : 5,60 cm a 2,79 Hz contre 4,53 a 1,82)
+        r=json.loads(await pg.evaluate("""(()=>{ const C=__T.CLIPS, a=C['marche'], b=C['marchelente'];
+          if(!a||!b) return JSON.stringify({err:'clip absent'});
+          const amp=c=>{ const d=c.dy; return (Math.max(...d)-Math.min(...d))*100; };
+          return JSON.stringify({ vert_marche:+amp(a).toFixed(2), vert_lente:+amp(b).toFixed(2),
+            duree_marche:+(a.n/a.fps).toFixed(2), duree_lente:+(b.n/b.fps).toFixed(2) }); })()"""))
+        ok('marche lente : vertical <= 60 % de la marche et cycle >= 1,3 fois plus long',
+           not r.get('err') and r['vert_lente'] <= 0.60*r['vert_marche'] and r['duree_lente'] >= 1.3*r['duree_marche'], r)
         ok('aucune erreur JS',not pg.errs,pg.errs); await pg.close(); await br.close()
 subprocess.run([sys.executable,os.path.join(ROOT,'build.py'),'--test'],check=True,stdout=subprocess.DEVNULL)
 srv=http.server.ThreadingHTTPServer(('localhost',PORT),functools.partial(type('Q',(http.server.SimpleHTTPRequestHandler,),{'log_message':lambda *a:None}),directory=ROOT))
