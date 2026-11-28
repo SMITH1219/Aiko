@@ -1,7 +1,7 @@
 // Cache d'Aiko (généré par build.py : la version change dès qu'un fichier change).
 // Gros fichiers (corps 3D, moteur, mouvements) : servis depuis le cache d'abord → réouverture instantanée, même hors ligne.
 // Page : réseau d'abord (toujours la dernière version), cache en secours.
-const V='aiko-a7f9dda615bc', B=self.registration.scope, CORE=['','index.html','aiko-3d.js','clips.json','model.json','manifest.webmanifest','icon-192.png','icon-512.png','lib/index.json'].map(p=>B+p);
+const V='aiko-f1ac00976d43', B=self.registration.scope, CORE=['','index.html','aiko-3d.js','clips.json','model.json','manifest.webmanifest','icon-192.png','icon-512.png','lib/index.json'].map(p=>B+p);
 const HEAVY=/\/(aiko-3d\.js|clips\.json|model\.json|business\.json|icon-\d+\.png|lib\/.+\.json)$/;
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>Promise.all(CORE.map(u=>c.add(new Request(u,{cache:'reload'})).catch(()=>0)))).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==V).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});
