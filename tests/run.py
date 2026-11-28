@@ -160,6 +160,27 @@ async def main():
             duree_marche:+(a.n/a.fps).toFixed(2), duree_lente:+(b.n/b.fps).toFixed(2) }); })()"""))
         ok('marche lente : vertical <= 60 % de la marche et cycle >= 1,3 fois plus long',
            not r.get('err') and r['vert_lente'] <= 0.60*r['vert_marche'] and r['duree_lente'] >= 1.3*r['duree_marche'], r)
+        # 14 pieds au sol : la vraie peau des pieds touche le sol sans s'y enfoncer (avant : jusqu'a 2 cm en marchant, 3,3 cm au trot)
+        r=json.loads(await pg.evaluate("""(async ()=>{ const pn=performance.now.bind(performance); window.__vt=pn(); performance.now=()=>window.__vt; window.__freeze=1; window.__dt=1/60;
+          window.__nogest=0; window.__noautocam=1;
+          const V=__T.THREE.Vector3; let corps=null; __T.vrmRef().scene.traverse(o=>{ if(o.isSkinnedMesh&&o.name==='Body_corps') corps=o; });
+          const P=corps.geometry.attributes.position, W=new V(), idx=[];
+          corps.updateWorldMatrix(true,false);
+          for(let i=0;i<P.count;i++){ W.fromBufferAttribute(P,i).applyMatrix4(corps.matrixWorld); if(W.y<0.16) idx.push(i); }
+          const res={};
+          for(const clip of ['marche','trot']){
+            __T.playGesture(clip); await new Promise(r=>setTimeout(r,1200));
+            for(let i=0;i<50;i++){ window.__vt+=1000/60; __T.animateFrame(); }
+            let lo=1e9, hi=-1e9;
+            for(let f=0;f<40;f++){ for(let k=0;k<2;k++){ window.__vt+=1000/60; __T.animateFrame(); } corps.updateWorldMatrix(true,false);
+              let m=1e9; for(const i of idx){ corps.getVertexPosition(i,W); W.applyMatrix4(corps.matrixWorld); if(W.y<m) m=W.y; }
+              lo=Math.min(lo,m); hi=Math.max(hi,m); }
+            res[clip]=[+(lo*1000).toFixed(1), +(hi*1000).toFixed(1)];
+          }
+          performance.now=pn; window.__freeze=0; window.__dt=0;
+          return JSON.stringify(res); })()"""))
+        ok('pieds au sol : peau a moins de 3 mm du sol en marchant et au trot, sans s y enfoncer',
+           all(-3<=v[0] and v[1]<=3 for v in r.values()), r)
         ok('aucune erreur JS',not pg.errs,pg.errs); await pg.close(); await br.close()
 subprocess.run([sys.executable,os.path.join(ROOT,'build.py'),'--test'],check=True,stdout=subprocess.DEVNULL)
 srv=http.server.ThreadingHTTPServer(('localhost',PORT),functools.partial(type('Q',(http.server.SimpleHTTPRequestHandler,),{'log_message':lambda *a:None}),directory=ROOT))

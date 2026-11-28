@@ -361,6 +361,35 @@ document.querySelectorAll('#row-tint .chip').forEach((b) => b.addEventListener('
 
 let vrm = null;
 let bones = {};
+/* Points de contact des pieds pris sur la VRAIE peau, au repos, chacun rattache a l'os qui le porte (pied ou orteils).
+   L'ancrage au sol utilisait des points estimes (cheville - 7 cm, orteils - 9 mm, bout des orteils - 12 mm) :
+   mesure le 28/11, la peau passait jusqu'a 2 cm sous le sol en marchant, 3,3 cm au trot, et flottait a d'autres moments.
+   On garde toute la surface du pied sous la cheville (semelle, talon, dessus du pied pour quand elle est a genoux),
+   decimee sur une grille de 1,6 cm : environ deux cents sommets par pied (mesure : ~0,3 ms par image). */
+function footPoints() {
+  const cand = [];
+  vrm.scene.traverse((o) => { if (o.isSkinnedMesh && !/^wear_/.test(o.name)) cand.push(o); });
+  const corps = cand.find((o) => o.name === 'Body_corps') || cand.sort((a, b) => b.geometry.attributes.position.count - a.geometry.attributes.position.count)[0] || null;   // le corps, jamais un vetement
+  if (!corps || !bones.lFoot) return null;
+  // indices des sommets (et non des points rattaches a un os) : la silhouette change l'echelle des os BRUTS, que la peau suit
+  // et pas les os normalises ; des points rigides sur les os normalises s'ecartaient de la peau (6 mm debout, mesure).
+  try { vrm.humanoid.update(); } catch (_) {}
+  rig.updateMatrixWorld(true); corps.updateWorldMatrix(true, false);
+  const P = corps.geometry.attributes.position, W = new THREE.Vector3();
+  const H = bones.hips.getWorldPosition(new THREE.Vector3());
+  const fL = bones.lFoot.getWorldPosition(new THREE.Vector3()), fR = bones.rFoot.getWorldPosition(new THREE.Vector3());
+  const hAnk = Math.min(fL.y, fR.y), grid = { L: new Map(), R: new Map() };
+  for (let i = 0; i < P.count; i++) {
+    corps.getVertexPosition(i, W); W.applyMatrix4(corps.matrixWorld);
+    if (W.y > hAnk) continue;                                            // sous la cheville : semelle, talon, dessus du pied
+    const k = (W.x - H.x) * (fL.x - H.x) > 0 ? 'L' : 'R';
+    if (W.distanceTo(k === 'L' ? fL : fR) > 0.32) continue;
+    const key = Math.round(W.x / 0.016) + ',' + Math.round(W.y / 0.016) + ',' + Math.round(W.z / 0.016);
+    const prev = grid[k].get(key); if (prev && prev[1] <= W.y) continue;   // une case de 1,6 cm = son sommet le plus bas (erreur < 1 mm sur la courbe du talon, cout divise par deux)
+    grid[k].set(key, [i, W.y]);
+  }
+  return { mesh: corps, L: [...grid.L.values()].map((x) => x[0]), R: [...grid.R.values()].map((x) => x[0]) };
+}
 const groups = { top: [], bottom: [], full: [], shoes: [], hair: [], glasses: [] };
 const OUTFIT_SHOW = {
   nue:      { top: 0, bottom: 0, full: 0, shoes: 0 },
@@ -473,6 +502,7 @@ function onLoaded(gltf, label, isDemo) {
   { const te = (n, t) => { const e = vrm.scene.getObjectByName(n), p = wp(t); return e && p ? e.getWorldPosition(new THREE.Vector3()).sub(p) : null; };
     const L = te('LeftToe_End', 'leftToes'), R = te('RightToe_End', 'rightToes'); body.toeEnd = L && R ? { L, R } : null; }   // bout des orteils, par rapport à leur base
   body.anchL = wp('leftFoot'); body.anchR = wp('rightFoot');   // position des pieds au sol, au repos : cibles pour l'IK jambes (postures porteuses)
+  try { body.footPts = footPoints(); } catch (e) { body.footPts = null; console.warn('pieds', e); }
   body.legDir = (vrm.meta && vrm.meta.metaVersion === '0') ? 1 : -1;   // VRM 0.x regarde dans l'autre sens
   const seat = body.lower + body.foot - 0.07;
   stool.scale.set(1, seat, 1);

@@ -384,7 +384,10 @@ function animateFrame() {
     if (gst !== XF.last) { if (XF.last && gst && poseCur.lie < 0.3) xfadeStart(); XF.last = gst; if (!gst || !gst.clip) footLockReset(); }   // changement de geste : fondu depuis la pose réelle
     xfadeApply(b, dt);
     if (gst && gst.clip && gst.clip.fo) { if (poseCur.lie < 0.3 && poseCur.sit < 0.3) clipFeet(gst, ge, b); footLockReset(); }   // mouvement préparé : appuis connus d'avance
-    else if (gst && gst.clip && !AIRBORNE.test(gst.name + ' ' + (gst.en || '')) && poseCur.lie < 0.3 && poseCur.sit < 0.3) footLock(b, dt, ge); else footLockReset();
+    else if (gst && gst.clip && !AIRBORNE.test(gst.name + ' ' + (gst.en || '')) && poseCur.lie < 0.3 && poseCur.sit < 0.3) {
+      footLock(b, dt, ge);
+      if (clipAir(gst) === null) groundBody(b, ge * (1 - poseCur.lie) * (1 - poseCur.sit));   // le verrouillage du pied retouche la jambe APRES l'ancrage : on repose au sol (mesure : pieds de -12 a +15 mm en marchant sinon)
+    } else footLockReset();
     // la caméra suit doucement le corps quand il se déplace (mouvement de la bibliothèque), puis revient au centre
     { // mouvement terminé, elle est au repos : la pièce se recentre sur elle d'un seul coup (invisible : caméra, sol et lumière la suivent déjà)
       if (!gst && (WORLD.x || WORLD.z)) { camFollow.x -= WORLD.x; camFollow.z -= WORLD.z; rig.position.x -= WORLD.x; rig.position.z -= WORLD.z; WORLD.x = WORLD.z = 0; footLockReset(); for (const j of jig) j.prev = null; rig.updateMatrixWorld(true); }

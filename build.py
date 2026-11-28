@@ -6,7 +6,7 @@ files=sorted(glob.glob(os.path.join(d,'src','*')))
 out='\n'.join(open(f,encoding='utf-8').read() for f in files)
 if '--test' in sys.argv:
     i=out.rindex('</script>')
-    out=out[:i]+"\nwindow.__T={THREE,TOOLS,webSearch,webRead,runTool,compsOf,brainContext,brainState,runMission,studyOnce,CLIPS, playGesture,setPose,target,camera,libPlay,animateFrame,skinPush,SKIN,SURF,surfUpdate,surfClosest,surfPalm,ZONES,SENSI,FCONF,touchSense,surfTriBone,SLOCK,idlePick,FOOTLOC,_bf,TLIVE,PERF,PROPS_ST,askClaude,engineList,webSearch,tlPick,tlZone,bfFrame,bfAnchors,CAM,lifeRef:()=>life,lastTouch:()=>lastTouch,bacRun,BAC,runCodeTool,amelVeille,amelProps,amelApply,amelUndo,amelVers,GLIB,GLB_EXPR,PRESETS,vrmRef:()=>vrm,EAT,rawOf,gstRef:()=>gst,lipPrep,lipGo,lipEnd,lipRef:()=>lip,frVisemes,mouthSet:(v)=>{mouthOn=v;},setExpr,setEmotion,emoRef:()=>[emotion,emotionW]};\n"+out[i:]
+    out=out[:i]+"\nwindow.__T={THREE,TOOLS,webSearch,webRead,runTool,compsOf,brainContext,brainState,runMission,studyOnce,CLIPS, body, groundBody, playGesture,setPose,target,camera,libPlay,animateFrame,skinPush,SKIN,SURF,surfUpdate,surfClosest,surfPalm,ZONES,SENSI,FCONF,touchSense,surfTriBone,SLOCK,idlePick,FOOTLOC,_bf,TLIVE,PERF,PROPS_ST,askClaude,engineList,webSearch,tlPick,tlZone,bfFrame,bfAnchors,CAM,lifeRef:()=>life,lastTouch:()=>lastTouch,bacRun,BAC,runCodeTool,amelVeille,amelProps,amelApply,amelUndo,amelVers,GLIB,GLB_EXPR,PRESETS,vrmRef:()=>vrm,EAT,rawOf,gstRef:()=>gst,lipPrep,lipGo,lipEnd,lipRef:()=>lip,frVisemes,mouthSet:(v)=>{mouthOn=v;},setExpr,setEmotion,emoRef:()=>[emotion,emotionW]};\n"+out[i:]
     open(os.path.join(d,'_test.html'),'w',encoding='utf-8').write(out)
 else:
     open(os.path.join(d,'index.html'),'w',encoding='utf-8').write(out)

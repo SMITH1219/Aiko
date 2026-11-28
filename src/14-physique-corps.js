@@ -153,7 +153,15 @@ function groundBody(b, w, upOnly, noHands, noRLeg) {   // noHands : gestes de TO
   for (const e of groundBody.te) if (e) C.push([e, 0.012]);
   if (!noHands) for (const h of [b.lHand, b.rHand]) if (h) C.push([h, 0.035]);
   if (noRLeg) for (let i = C.length - 1; i >= 0; i--) if (/^(Normalized_)?Right(Foot|Toe|ToeBase|Toe_End|Leg|LowerLeg)/.test(C[i][0] && C[i][0].name || '') || C[i][0] === b.rFoot || C[i][0] === b.rToes || C[i][0] === b.rLowLeg) C.splice(i, 1);   // jambe droite POSÉE ensuite par IK (demi-tailleur) : elle n'est pas un appui   // mains : en appui (roue, équilibre, pompes), elles se posent sur le sol au lieu de passer dessous   // bout des orteils : sur la pointe des pieds, il ne s'enfonce plus dans le sol
+  const FP = body.footPts && !window.__oldFeet ? body.footPts : null;
+  if (FP) for (let i = C.length - 1; i >= 0; i--) { const o = C[i][0]; if (o && (o === b.lFoot || o === b.rFoot || o === b.lToes || o === b.rToes || /Toe_End/.test(o.name || ''))) C.splice(i, 1); }   // pieds : la vraie peau remplace les points estimes
   let m = Infinity, mo = null; for (const [o, r] of C) if (o) { const v = o.getWorldPosition(_gv).y - r; if (v < m) { m = v; mo = o.name; } }
+  if (FP) {                                                   // vraie peau des pieds : os bruts mis a jour d'abord (la peau les suit, pas le rig normalise)
+    try { vrm.humanoid.update(); } catch (_) {}
+    rig.updateMatrixWorld(true);
+    const M = FP.mesh;
+    for (const k of noRLeg ? ['L'] : ['L', 'R']) for (const i of FP[k]) { const v = M.getVertexPosition(i, _gv).applyMatrix4(M.matrixWorld).y; if (v < m) { m = v; mo = 'peau ' + k; } }
+  }
   if (window.__gbLog) window.__gbLog.push([mo, +m.toFixed(3), +rig.position.y.toFixed(3), b.rUpLeg.rotation.toArray().slice(0,3).map((x) => +x.toFixed(2)), +b.rLowLeg.rotation.x.toFixed(2), +b.hips.rotation.x.toFixed(2), +b.hips.position.y.toFixed(3)]);
   if (isFinite(m) && (!upOnly || m < -0.003)) { rig.position.y -= m * w; rig.updateMatrixWorld(true); }   // upOnly : simple garde-fou (rien ne passe sous le sol), sans recoller au sol
 }
